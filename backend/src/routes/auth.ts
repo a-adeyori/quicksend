@@ -1,0 +1,240 @@
+import { Router, Request, Response, NextFunction } from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { z } from 'zod';
+import { db } from '../config/database';
+import { config } from '../config/env';
+import { AppError } from '../middleware/errorHandler';
+import { authenticate, AuthRequest } from '../middleware/auth';
+import { logger } from '../utils/logger';
+
+const router = Router();
+
+// ─── Schemas ──────────────────────────────────────────────────────────────────
+
+const registerSchema = z.object({
+  firstName: z.string().min(1).max(50),
+  lastName: z.string().min(1).max(50),
+  email: z.string().email(),
+  phone: z.string().regex(/^\+?[\d\s\-()]{7,20}$/).optional(),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string(),
+});
+
+const refreshSchema = z.object({
+  refreshToken: z.string(),
+});
+
+// ─── Token helpers ────────────────────────────────────────────────────────────
+
+function generateAccessToken(userId: string, email: string, role: string) {
+  return jwt.sign(
+    { sub: userId, email, role },
+    config.jwt.secret,
+    { expiresIn: config.jwt.expiresIn as any }
+  );
+}
+
+function generateRefreshToken(userId: string) {
+  return jwt.sign(
+    { sub: userId, type: 'refresh' },
+    config.jwt.refreshSecret,
+    { expiresIn: config.jwt.refreshExpiresIn as any }
+  );
+}
+
+function tokenExpiresAt(duration: string): Date {
+  const units: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
+  const match = duration.match(/^(\d+)([smhd])$/);
+  if (!match) throw new Error('Invalid duration: ' + duration);
+  const seconds = parseInt(match[1]) * units[match[2]];
+  return new Date(Date.now() + seconds * 1000);
+}
+
+// ─── POST /auth/register ──────────────────────────────────────────────────────
+
+router.post('/register', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const body = registerSchema.parse(req.body);
+
+    // Check email uniqueness
+    const existing = await db.user.findUnique({ where: { email: body.email } });
+    if (existing) throw AppError.conflict('An account with this email already exists');
+
+    const passwordHash = await bcrypt.hash(body.password, config.bcryptRounds);
+
+    const user = await db.user.create({
+      data: {
+        firstName: body.firstName,
+        lastName: body.lastName,
+        email: body.email,
+        phone: body.phone,
+        passwordHash,
+      },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true },
+    });
+
+    // Tokens
+    const accessToken = generateAccessToken(user.id, user.email, user.role);
+    const refreshToken = generateRefreshToken(user.id);
+
+    await db.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: refreshToken,
+        expiresAt: tokenExpiresAt(config.jwt.refreshExpiresIn),
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+    });
+
+    await db.auditLog.create({
+      data: { userId: user.id, action: 'REGISTER', resource: 'user', ipAddress: req.ip },
+    });
+
+    logger.info('User registered', { userId: user.id, email: user.email });
+
+    res.status(201).json({
+      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName },
+      accessToken,
+      refreshToken,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /auth/login ─────────────────────────────────────────────────────────
+
+router.post('/login', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, password } = loginSchema.parse(req.body);
+
+    const user = await db.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, passwordHash: true, isActive: true },
+    });
+
+    if (!user || !user.isActive) throw AppError.unauthorized('Invalid credentials');
+
+    const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!passwordMatch) throw AppError.unauthorized('Invalid credentials');
+
+    const accessToken = generateAccessToken(user.id, user.email, user.role);
+    const refreshToken = generateRefreshToken(user.id);
+
+    await db.refreshToken.create({
+      data: {
+        userId: user.id,
+        token: refreshToken,
+        expiresAt: tokenExpiresAt(config.jwt.refreshExpiresIn),
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      },
+    });
+
+    await db.auditLog.create({
+      data: { userId: user.id, action: 'LOGIN', resource: 'user', ipAddress: req.ip },
+    });
+
+    logger.info('User logged in', { userId: user.id });
+
+    res.json({
+      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName },
+      accessToken,
+      refreshToken,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /auth/refresh ───────────────────────────────────────────────────────
+
+router.post('/refresh', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { refreshToken } = refreshSchema.parse(req.body);
+
+    let payload: { sub: string };
+    try {
+      payload = jwt.verify(refreshToken, config.jwt.refreshSecret) as typeof payload;
+    } catch {
+      throw AppError.unauthorized('Invalid or expired refresh token');
+    }
+
+    const stored = await db.refreshToken.findUnique({
+      where: { token: refreshToken },
+      include: { user: { select: { id: true, email: true, role: true, isActive: true } } },
+    });
+
+    if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+      throw AppError.unauthorized('Refresh token revoked or expired');
+    }
+
+    if (!stored.user.isActive) throw AppError.unauthorized('Account deactivated');
+
+    // Rotate: revoke old, issue new
+    const newRefreshToken = generateRefreshToken(stored.user.id);
+    await db.$transaction([
+      db.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } }),
+      db.refreshToken.create({
+        data: {
+          userId: stored.user.id,
+          token: newRefreshToken,
+          expiresAt: tokenExpiresAt(config.jwt.refreshExpiresIn),
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        },
+      }),
+    ]);
+
+    const accessToken = generateAccessToken(stored.user.id, stored.user.email, stored.user.role);
+
+    res.json({ accessToken, refreshToken: newRefreshToken });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /auth/logout ────────────────────────────────────────────────────────
+
+router.post('/logout', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      await db.refreshToken.updateMany({
+        where: { token: refreshToken, userId: (req as AuthRequest).user.id },
+        data: { revokedAt: new Date() },
+      });
+    }
+    res.json({ message: 'Logged out successfully' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /auth/me ──────────────────────────────────────────────────────────────
+
+router.get('/me', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = await db.user.findUnique({
+      where: { id: (req as AuthRequest).user.id },
+      select: {
+        id: true, email: true, firstName: true, lastName: true,
+        phone: true, role: true, kycStatus: true, walletAddress: true,
+        balanceCents: true, assetCode: true, assetScale: true,
+        isVerified: true, createdAt: true,
+      },
+    });
+    if (!user) throw AppError.notFound('User');
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
+});
+
+export default router;

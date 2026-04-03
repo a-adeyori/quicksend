@@ -1,0 +1,102 @@
+version: '3.9'
+
+# ─── Networks ─────────────────────────────────────────────────────────────────
+networks:
+  quicksend:
+    driver: bridge
+
+# ─── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:
+  pgadmin_data:
+
+# ─── Services ─────────────────────────────────────────────────────────────────
+services:
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: quicksend_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: quicksend
+      POSTGRES_PASSWORD: quicksend_pass
+      POSTGRES_DB: quicksend_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - quicksend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quicksend -d quicksend_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ─────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: quicksend_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass redis_pass
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - quicksend
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_pass", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── QuickSend API ─────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: quicksend_api
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://quicksend:quicksend_pass@postgres:5432/quicksend_db?schema=public
+      REDIS_URL: redis://:redis_pass@redis:6379
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    networks:
+      - quicksend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── pgAdmin (optional DB UI) ──────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: quicksend_pgadmin
+    restart: unless-stopped
+    profiles: ["tools"]   # only starts with: docker compose --profile tools up
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@quicksend.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "5050:80"
+    networks:
+      - quicksend
+    depends_on:
+      - postgres

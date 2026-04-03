@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "QuickSend",
+    "slug": "quicksend",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.quicksend.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "QuickSend uses Face ID to securely authenticate you.",
+        "NSMicrophoneUsageDescription": "QuickSend uses the microphone for voice commands.",
+        "NSSpeechRecognitionUsageDescription": "QuickSend uses speech recognition for voice-activated transfers."
+      }
+    },
+    "android": {
+      "package": "com.quicksend.app",
+      "permissions": [
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "RECORD_AUDIO",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication",
+      "expo-asset",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "scheme": "quicksend",
+    "extra": {
+      "eas": {
+        "projectId": "0d4e425c-393e-46f9-8c47-9b125360079f"
+      }
+    },
+    "owner": "yori098"
+  }
+}

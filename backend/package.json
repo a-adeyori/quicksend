@@ -1,0 +1,51 @@
+{
+  "name": "quicksend-backend",
+  "version": "1.0.0",
+  "description": "QuickSend API — Node.js backend with ILP/Rafiki integration",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
+    "test": "vitest",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "dotenv": "^16.4.5",
+    "zod": "^3.23.8",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "axios": "^1.7.9",
+    "uuid": "^11.0.3",
+    "@prisma/client": "^5.22.0",
+    "express-rate-limit": "^7.4.1",
+    "express-validator": "^7.2.0",
+    "winston": "^3.17.0",
+    "node-cron": "^3.0.3",
+    "ioredis": "^5.4.1",
+    "bull": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/morgan": "^1.9.9",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/uuid": "^10.0.0",
+    "@types/node": "^22.10.1",
+    "@types/bull": "^4.10.0",
+    "@types/node-cron": "^3.0.11",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
