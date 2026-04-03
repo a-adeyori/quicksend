@@ -1,37 +1,57 @@
 import { z } from 'zod';
 
-const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.coerce.number().default(3001),
-  API_VERSION: z.string().default('v1'),
+const envSchema = z
+  .object({
+    NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+    PORT: z.coerce.number().default(3001),
+    API_VERSION: z.string().default('v1'),
 
-  DATABASE_URL: z.string().url(),
-  REDIS_URL: z.string().default('redis://localhost:6379'),
+    USE_JSON_DB: z.enum(['true', 'false']).default('false'),
 
-  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
-  JWT_EXPIRES_IN: z.string().default('15m'),
-  JWT_REFRESH_SECRET: z.string().min(32),
-  JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
+    DATABASE_URL: z.string().optional(),
+    REDIS_URL: z.string().default('redis://localhost:6379'),
 
-  RAFIKI_AUTH_SERVER_URL: z.string().url(),
-  RAFIKI_RESOURCE_SERVER_URL: z.string().url(),
-  QUICKSEND_PLATFORM_WALLET_ADDRESS: z.string().url(),
-  RAFIKI_SERVICE_TOKEN: z.string().default(''),
-  RAFIKI_WEBHOOK_SECRET: z.string().min(16),
+    JWT_SECRET: z.string().min(8),
+    JWT_EXPIRES_IN: z.string().default('15m'),
+    JWT_REFRESH_SECRET: z.string().min(8),
+    JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
 
-  BCRYPT_ROUNDS: z.coerce.number().default(12),
-  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900_000),
-  RATE_LIMIT_MAX: z.coerce.number().default(100),
-  RATE_LIMIT_SEND_MAX: z.coerce.number().default(10),
+    RAFIKI_AUTH_SERVER_URL: z.string().url(),
+    RAFIKI_RESOURCE_SERVER_URL: z.string().url(),
+    QUICKSEND_PLATFORM_WALLET_ADDRESS: z.string().url(),
+    RAFIKI_SERVICE_TOKEN: z.string().default(''),
+    RAFIKI_WEBHOOK_SECRET: z.string().min(8),
 
-  CORS_ORIGINS: z.string().default('http://localhost:8081'),
-  LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'debug']).default('debug'),
+    BCRYPT_ROUNDS: z.coerce.number().default(12),
+    RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900_000),
+    RATE_LIMIT_MAX: z.coerce.number().default(100),
+    RATE_LIMIT_SEND_MAX: z.coerce.number().default(10),
 
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().optional(),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-});
+    CORS_ORIGINS: z.string().default('http://localhost:8081'),
+    LOG_LEVEL: z.enum(['error', 'warn', 'info', 'http', 'debug']).default('debug'),
+
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().optional(),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const json = data.USE_JSON_DB === 'true';
+    if (!json) {
+      if (!data.DATABASE_URL || data.DATABASE_URL.length === 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['DATABASE_URL'], message: 'Required when USE_JSON_DB is not true' });
+      }
+      if (data.JWT_SECRET.length < 32) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['JWT_SECRET'], message: 'JWT_SECRET must be at least 32 characters when using PostgreSQL' });
+      }
+      if (data.JWT_REFRESH_SECRET.length < 32) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['JWT_REFRESH_SECRET'], message: 'JWT_REFRESH_SECRET must be at least 32 characters when using PostgreSQL' });
+      }
+      if (data.RAFIKI_WEBHOOK_SECRET.length < 16) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['RAFIKI_WEBHOOK_SECRET'], message: 'RAFIKI_WEBHOOK_SECRET must be at least 16 characters when using PostgreSQL' });
+      }
+    }
+  });
 
 function loadConfig() {
   const result = envSchema.safeParse(process.env);
@@ -54,7 +74,8 @@ export const config = {
   isDev: env.NODE_ENV === 'development',
   isProd: env.NODE_ENV === 'production',
 
-  databaseUrl: env.DATABASE_URL,
+  useJsonDb: env.USE_JSON_DB === 'true',
+  databaseUrl: env.DATABASE_URL ?? '',
   redisUrl: env.REDIS_URL,
 
   jwt: {

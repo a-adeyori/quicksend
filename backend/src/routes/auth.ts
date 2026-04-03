@@ -16,7 +16,11 @@ const registerSchema = z.object({
   firstName: z.string().min(1).max(50),
   lastName: z.string().min(1).max(50),
   email: z.string().email(),
-  phone: z.string().regex(/^\+?[\d\s\-()]{7,20}$/).optional(),
+  // Empty string from clients must become undefined (optional() alone does not allow '')
+  phone: z.preprocess(
+    (v) => (v === '' || v === undefined || v === null ? undefined : String(v).trim()),
+    z.string().regex(/^\+?[\d\s\-()]{7,20}$/).optional()
+  ),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 

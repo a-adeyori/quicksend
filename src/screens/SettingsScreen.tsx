@@ -8,18 +8,21 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useWallet } from '../context/WalletContext';
+import { useAuth } from '../context/AuthContext';
 import { RAFIKI_CONFIG } from '../services/rafikiService';
-import { colors, spacing, radius, typography, shadows } from '../utils/theme';
+import { colors, spacing, radius, typography, shadows, textInputWeb } from '../utils/theme';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { isConnected, walletAddress, connectWallet, disconnectWallet, setAccessToken } = useWallet();
+  const { logout } = useAuth();
+  const { isConnected, walletAddress, connectWallet, disconnectWallet, setAccessToken, ilpAccessToken } = useWallet();
 
   const [walletInput, setWalletInput] = useState(walletAddress);
   const [tokenInput, setTokenInput] = useState('');
@@ -48,6 +51,10 @@ export default function SettingsScreen() {
   };
 
   const handleBiometricTest = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Biometrics', 'Available in the iOS/Android app.');
+      return;
+    }
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage: 'Authenticate to confirm',
       fallbackLabel: 'Use PIN',
@@ -113,7 +120,11 @@ export default function SettingsScreen() {
           <View style={[styles.statusBanner, { backgroundColor: isConnected ? '#d1fae5' : '#fef3c7' }]}>
             <View style={[styles.statusDot, { backgroundColor: isConnected ? colors.primary : colors.warning }]} />
             <Text style={[styles.statusText, { color: isConnected ? colors.primary : colors.warning }]}>
-              {isConnected ? 'Wallet Connected (Live Mode)' : 'Demo Mode — No Wallet Connected'}
+              {isConnected
+                ? 'Wallet Connected (Open Payments / ILP)'
+                : ilpAccessToken
+                  ? 'ILP token saved — connect wallet address to go live'
+                  : 'Not connected — add wallet + GNAP token for ILP'}
             </Text>
           </View>
 
@@ -122,13 +133,14 @@ export default function SettingsScreen() {
             <Text style={styles.fieldLabel}>Wallet Address (Open Payments URL)</Text>
             <View style={styles.inputRow}>
               <TextInput
-                style={styles.textInput}
+                style={[styles.textInput, textInputWeb]}
                 value={walletInput}
                 onChangeText={setWalletInput}
                 placeholder="https://wallet.example.com/you"
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"
                 keyboardType="url"
+                underlineColorAndroid="transparent"
               />
             </View>
             <Text style={styles.fieldHint}>
@@ -180,7 +192,7 @@ export default function SettingsScreen() {
             <View style={styles.tokenSection}>
               <Text style={styles.fieldLabel}>GNAP Access Token</Text>
               <TextInput
-                style={[styles.textInput, { marginBottom: spacing.md }]}
+                style={[styles.textInput, textInputWeb, { marginBottom: spacing.md }]}
                 value={tokenInput}
                 onChangeText={setTokenInput}
                 placeholder="Paste your token here..."
@@ -188,6 +200,7 @@ export default function SettingsScreen() {
                 multiline
                 numberOfLines={3}
                 secureTextEntry
+                underlineColorAndroid="transparent"
               />
               <Text style={styles.fieldHint}>
                 Obtain a token from your wallet provider's authorization server.
@@ -248,7 +261,21 @@ export default function SettingsScreen() {
           <SettingRow icon="information-circle" label="Version" value="1.0.0 (ILP)" />
         </Section>
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={() => router.replace('/')}>
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={() => {
+            Alert.alert('Sign out', 'You will need to sign in again to access your account.', [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Sign Out',
+                style: 'destructive',
+                onPress: () => {
+                  void logout();
+                },
+              },
+            ]);
+          }}
+        >
           <Ionicons name="log-out" size={18} color={colors.error} />
           <Text style={styles.logoutText}>Sign Out</Text>
         </TouchableOpacity>

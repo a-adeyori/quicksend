@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -7,40 +7,56 @@ import {
   ScrollView,
   RefreshControl,
   StatusBar,
+  Pressable,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
 import { colors, spacing, radius, typography, shadows } from '../utils/theme';
+import type { Payment } from '../services/paymentsService';
+import { isDemoMode, isFrontendOnly, useLiveAuth } from '../config/demo';
 
-function TransactionRow({ tx }: { tx: { id: string; type: string; amount: number; currency: string; counterparty: string; description?: string; createdAt: string; state: string } }) {
+function paymentUsd(p: Payment): number {
+  const cents = p.type === 'incoming' ? p.receiveAmountCents : p.debitAmountCents;
+  return cents / 100;
+}
+
+function TransactionRow({ tx }: { tx: Payment }) {
   const isIn = tx.type === 'incoming';
-  const date = new Date(tx.createdAt).toLocaleDateString('en-US', {
+  const date = new Date(tx.initiatedAt).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
   });
 
   return (
-    <View style={styles.txRow}>
+    <Pressable
+      style={({ pressed }) => [styles.txRow, pressed && styles.txRowPressed]}
+      onPress={() => {
+        if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }}
+    >
       <View style={[styles.txIcon, { backgroundColor: isIn ? '#d1fae5' : '#fee2e2' }]}>
         <Ionicons
-          name={isIn ? 'trending-down' : 'trending-up'}
+          name={isIn ? 'arrow-down' : 'arrow-up'}
           size={16}
           color={isIn ? colors.moneyIn : colors.moneyOut}
         />
       </View>
       <View style={styles.txInfo}>
-        <Text style={styles.txName} numberOfLines={1}>{tx.counterparty}</Text>
-        {tx.description ? (
-          <Text style={styles.txDesc} numberOfLines={1}>{tx.description}</Text>
+        <Text style={styles.txName} numberOfLines={1}>{tx.recipientName}</Text>
+        {tx.note ? (
+          <Text style={styles.txDesc} numberOfLines={1}>{tx.note}</Text>
         ) : null}
         <Text style={styles.txDate}>{date}</Text>
       </View>
       <Text style={[styles.txAmount, { color: isIn ? colors.moneyIn : colors.moneyOut }]}>
-        {isIn ? '+' : '-'}${tx.amount.toFixed(2)}
+        {isIn ? '+' : '-'}${paymentUsd(tx).toFixed(2)}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -59,10 +75,10 @@ export default function DashboardScreen() {
   const recentTxs = transactions.slice(0, 5);
   const totalIn = transactions
     .filter((t) => t.type === 'incoming')
-    .reduce((s, t) => s + t.amount, 0);
+    .reduce((s, t) => s + t.receiveAmountCents / 100, 0);
   const totalOut = transactions
     .filter((t) => t.type === 'outgoing')
-    .reduce((s, t) => s + t.amount, 0);
+    .reduce((s, t) => s + t.debitAmountCents / 100, 0);
 
   return (
     <View style={styles.container}>
@@ -102,7 +118,15 @@ export default function DashboardScreen() {
           <Text style={styles.balanceLabel}>Total Balance</Text>
           <Text style={styles.balanceAmount}>{balance?.formatted ?? '$0.00'}</Text>
           <Text style={styles.walletNote}>
-            {isConnected ? '🟢 ILP Wallet Connected' : '⚪ Demo Mode'}
+            {isConnected
+              ? '🟢 ILP Wallet Connected'
+              : isFrontendOnly
+                ? '✨ Interactive demo · Saved locally on this device'
+                : isDemoMode && useLiveAuth
+                  ? '⚪ Simulated balance · Secure account'
+                  : isDemoMode
+                    ? '⚪ Demo Mode'
+                    : '⚪ Wallet'}
           </Text>
         </View>
 
@@ -145,7 +169,10 @@ export default function DashboardScreen() {
           <TouchableOpacity
             key={action.label}
             style={styles.actionBtn}
-            onPress={() => router.push(action.route as never)}
+            onPress={() => {
+              if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              router.push(action.route as never);
+            }}
             activeOpacity={0.8}
           >
             <View style={[styles.actionIcon, { backgroundColor: action.color + '18' }]}>
@@ -184,10 +211,13 @@ export default function DashboardScreen() {
             </View>
           ) : (
             recentTxs.map((tx, i) => (
-              <View key={tx.id}>
+              <Animated.View
+                key={tx.id}
+                entering={FadeInDown.springify().delay(55 * i).damping(18)}
+              >
                 <TransactionRow tx={tx} />
                 {i < recentTxs.length - 1 && <View style={styles.txDivider} />}
-              </View>
+              </Animated.View>
             ))
           )}
         </View>
@@ -265,6 +295,7 @@ const styles = StyleSheet.create({
   seeAll: { fontSize: typography.sm, fontWeight: typography.semibold, color: colors.primary },
   txCard: { backgroundColor: colors.card, borderRadius: radius.xl, overflow: 'hidden', ...shadows.card },
   txRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.lg, gap: spacing.md },
+  txRowPressed: { backgroundColor: colors.inputBg },
   txIcon: { width: 40, height: 40, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
   txInfo: { flex: 1, gap: 2 },
   txName: { fontSize: typography.base, fontWeight: typography.semibold, color: colors.textPrimary },

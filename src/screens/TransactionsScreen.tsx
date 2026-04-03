@@ -6,7 +6,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useWallet } from '../context/WalletContext';
 import { colors, spacing, radius, typography, shadows } from '../utils/theme';
-import { ILPTransaction } from '../services/rafikiService';
+import type { Payment } from '../services/paymentsService';
+
+function paymentUsd(p: Payment): number {
+  const cents = p.type === 'incoming' ? p.receiveAmountCents : p.debitAmountCents;
+  return cents / 100;
+}
 
 export default function TransactionsScreen() {
   const router = useRouter();
@@ -20,15 +25,15 @@ export default function TransactionsScreen() {
   const title = filter === 'in' ? 'Money In' : filter === 'out' ? 'Sent Out' : 'All Transactions';
   const subtitle = filter === 'in' ? 'Credits & deposits' : filter === 'out' ? 'Debits & payments' : 'Full history';
 
-  const totalIn = transactions.filter(t => t.type === 'incoming').reduce((s, t) => s + t.amount, 0);
-  const totalOut = transactions.filter(t => t.type === 'outgoing').reduce((s, t) => s + t.amount, 0);
+  const totalIn = transactions.filter(t => t.type === 'incoming').reduce((s, t) => s + t.receiveAmountCents / 100, 0);
+  const totalOut = transactions.filter(t => t.type === 'outgoing').reduce((s, t) => s + t.debitAmountCents / 100, 0);
 
-  const renderItem = ({ item, index }: { item: ILPTransaction; index: number }) => {
+  const renderItem = ({ item, index }: { item: Payment; index: number }) => {
     const isIn = item.type === 'incoming';
-    const date = new Date(item.createdAt).toLocaleDateString('en-US', {
+    const date = new Date(item.initiatedAt).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
     });
-    const time = new Date(item.createdAt).toLocaleTimeString('en-US', {
+    const time = new Date(item.initiatedAt).toLocaleTimeString('en-US', {
       hour: 'numeric', minute: '2-digit',
     });
 
@@ -43,25 +48,25 @@ export default function TransactionsScreen() {
         </View>
         <View style={styles.txBody}>
           <View style={styles.txTopRow}>
-            <Text style={styles.txName} numberOfLines={1}>{item.counterparty}</Text>
+            <Text style={styles.txName} numberOfLines={1}>{item.recipientName}</Text>
             <Text style={[styles.txAmount, { color: isIn ? colors.moneyIn : colors.moneyOut }]}>
-              {isIn ? '+' : '-'}${item.amount.toFixed(2)}
+              {isIn ? '+' : '-'}${paymentUsd(item).toFixed(2)}
             </Text>
           </View>
-          {item.description ? (
-            <Text style={styles.txDesc} numberOfLines={1}>{item.description}</Text>
+          {item.note ? (
+            <Text style={styles.txDesc} numberOfLines={1}>{item.note}</Text>
           ) : null}
           <View style={styles.txMeta}>
             <Text style={styles.txDate}>{date} · {time}</Text>
             <View style={[
               styles.txBadge,
-              { backgroundColor: item.state === 'COMPLETED' ? '#d1fae5' : '#fef3c7' },
+              { backgroundColor: item.status === 'COMPLETED' ? '#d1fae5' : '#fef3c7' },
             ]}>
               <Text style={[
                 styles.txBadgeText,
-                { color: item.state === 'COMPLETED' ? colors.primary : colors.warning },
+                { color: item.status === 'COMPLETED' ? colors.primary : colors.warning },
               ]}>
-                {item.state}
+                {item.status}
               </Text>
             </View>
           </View>

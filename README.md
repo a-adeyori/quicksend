@@ -17,6 +17,8 @@ A React Native (Expo) money-sending app with full **ILP / Rafiki wallet integrat
 | Biometrics | expo-local-authentication |
 | UI | Custom design system (no third-party UI lib) |
 
+**Layout:** This repo is a single root folder: Expo app files (`app/`, `src/`, `package.json`, `vercel.json`) and `backend/` for the API. Deploy the web app to Vercel from the **repository root** (Root Directory empty).
+
 ---
 
 ## Quick Start

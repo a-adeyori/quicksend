@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
 import { RAFIKI_CONFIG } from '../services/rafikiService';
-import { colors, spacing, radius, typography, shadows } from '../utils/theme';
+import { colors, spacing, radius, typography, shadows, textInputWeb } from '../utils/theme';
 
 // Simple QR-code-like visual built from SVG concepts using View grids
 function QRVisual({ value }: { value: string }) {
@@ -153,12 +153,13 @@ export default function ReceiveScreen() {
           <View style={styles.inputRow}>
             <Ionicons name="cash" size={18} color={colors.textMuted} />
             <TextInput
-              style={styles.input}
+              style={[styles.input, textInputWeb]}
               placeholder="0.00"
               placeholderTextColor={colors.textMuted}
               value={amount}
               onChangeText={setAmount}
               keyboardType="decimal-pad"
+              underlineColorAndroid="transparent"
             />
             <Text style={styles.currency}>USD</Text>
           </View>
@@ -166,11 +167,12 @@ export default function ReceiveScreen() {
           <View style={[styles.inputRow, { marginTop: spacing.sm }]}>
             <Ionicons name="chatbubble-ellipses" size={18} color={colors.textMuted} />
             <TextInput
-              style={styles.input}
+              style={[styles.input, textInputWeb]}
               placeholder="Add a note..."
               placeholderTextColor={colors.textMuted}
               value={note}
               onChangeText={setNote}
+              underlineColorAndroid="transparent"
             />
           </View>
 

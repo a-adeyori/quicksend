@@ -7,6 +7,7 @@ import {
   Animated,
   ScrollView,
   Alert,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +15,10 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
 import { colors, spacing, radius, typography, shadows } from '../utils/theme';
-import { isDemoMode } from '../config/demo';
+import { isDemoMode, useLiveAuth } from '../config/demo';
+import { useWebSpeechRecognition } from '../hooks/useWebSpeechRecognition';
+
+const IS_WEB = Platform.OS === 'web';
 
 // ── Simple command parser ─────────────────────────────────────────────────────
 function parseVoiceCommand(text: string): {
@@ -67,6 +71,7 @@ const DEMO_TRANSCRIPTS = [
 export default function VoiceAssistantScreen() {
   const router = useRouter();
   const { balance, transactions, sendMoney, contacts } = useWallet();
+  const webSpeech = useWebSpeechRecognition();
 
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -78,6 +83,11 @@ export default function VoiceAssistantScreen() {
   const waveAnims = useRef([...Array(5)].map(() => new Animated.Value(0.3))).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const demoIndex = useRef(0);
+
+  useEffect(() => {
+    if (!IS_WEB || !isListening) return;
+    if (webSpeech.transcript) setTranscript(webSpeech.transcript);
+  }, [IS_WEB, isListening, webSpeech.transcript]);
 
   // Pulse animation for mic button
   useEffect(() => {
@@ -107,6 +117,34 @@ export default function VoiceAssistantScreen() {
   }, [isListening]);
 
   const handleMicPress = async () => {
+    if (IS_WEB) {
+      if (!webSpeech.supported) {
+        Alert.alert(
+          'Voice input',
+          'Use Safari or Chrome with microphone permission, or tap an example phrase below.',
+        );
+        return;
+      }
+      if (webSpeech.error) {
+        webSpeech.setError(null);
+      }
+      if (isListening) {
+        webSpeech.stop();
+        setIsListening(false);
+        setStatus('processing');
+        const text = webSpeech.transcript.trim() || transcript.trim();
+        await new Promise(r => setTimeout(r, 400));
+        await processCommand(text || 'balance');
+        return;
+      }
+      setTranscript('');
+      setResponse('');
+      setStatus('listening');
+      setIsListening(true);
+      webSpeech.start();
+      return;
+    }
+
     if (isListening) {
       // Stop listening
       setIsListening(false);
@@ -157,7 +195,11 @@ export default function VoiceAssistantScreen() {
         reply =
           'Your 3 most recent transactions:\n' +
           recent
-            .map(t => `${t.type === 'incoming' ? '↓' : '↑'} $${t.amount.toFixed(2)} — ${t.counterparty}`)
+            .map((t) => {
+              const cents = t.type === 'incoming' ? t.receiveAmountCents : t.debitAmountCents;
+              const amt = cents / 100;
+              return `${t.type === 'incoming' ? '↓' : '↑'} $${amt.toFixed(2)} — ${t.recipientName}`;
+            })
             .join('\n');
       }
     } else if (parsed.action === 'send' && parsed.recipient && parsed.amount) {
@@ -191,7 +233,9 @@ export default function VoiceAssistantScreen() {
           : `✅ Done! $${parsed.amount.toFixed(2)} sent to ${displayName} via the Interledger network.`;
         setHistory(h => [...h.slice(0, -1), { user: text, assistant: confirmReply }]);
         setResponse(confirmReply);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
       } else {
         const failReply = `❌ Payment failed: ${result.error ?? 'Unknown error.'}`;
         setHistory(h => [...h.slice(0, -1), { user: text, assistant: failReply }]);
@@ -211,7 +255,9 @@ export default function VoiceAssistantScreen() {
   };
 
   const handleExampleTap = async (cmd: string) => {
-    Haptics.selectionAsync();
+    if (Platform.OS !== 'web') {
+      Haptics.selectionAsync();
+    }
     setTranscript(cmd);
     setStatus('processing');
     await new Promise(r => setTimeout(r, 400));
@@ -219,7 +265,9 @@ export default function VoiceAssistantScreen() {
   };
 
   const statusLabel = {
-    idle: 'Tap the mic to speak',
+    idle: IS_WEB
+      ? (webSpeech.supported ? 'Tap mic to speak (browser)' : 'Tap an example below')
+      : 'Tap the mic to speak',
     listening: 'Listening...',
     processing: 'Processing...',
     done: '',
@@ -343,9 +391,13 @@ export default function VoiceAssistantScreen() {
 
       {/* ILP note */}
       <Text style={styles.ilpNote}>
-        {isDemoMode
-          ? '⚡ Interactive demo — voice uses simulated recognition; no real payments'
-          : '⚡ Voice payments sent via Interledger Protocol'}
+        {isDemoMode && !useLiveAuth
+          ? IS_WEB
+            ? '⚡ Demo — use mic (HTTPS) or examples; no real payments'
+            : '⚡ Interactive demo — voice uses simulated recognition; no real payments'
+          : isDemoMode && useLiveAuth
+            ? '⚡ Signed in securely · balance is simulated · add ILP token in Settings for real Open Payments'
+            : '⚡ Voice + payments use Interledger (ILP) / Open Payments when connected in Settings'}
       </Text>
     </View>
   );

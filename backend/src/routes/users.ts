@@ -8,6 +8,7 @@ import { AppError } from '../middleware/errorHandler';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { rafikiService } from '../services/rafikiService';
 import { formatCurrency } from '../services/rafikiService';
+import { requireRouteParam } from '../utils/routeParams';
 
 export const usersRouter = Router();
 usersRouter.use(authenticate);
@@ -85,8 +86,9 @@ usersRouter.get('/notifications', async (req: Request, res: Response, next: Next
 // POST /users/notifications/:id/read
 usersRouter.post('/notifications/:id/read', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const notifId = requireRouteParam(req.params.id);
     await db.notification.updateMany({
-      where: { id: req.params.id, userId: (req as AuthRequest).user.id },
+      where: { id: notifId, userId: (req as AuthRequest).user.id },
       data: { isRead: true, readAt: new Date() },
     });
     res.json({ ok: true });

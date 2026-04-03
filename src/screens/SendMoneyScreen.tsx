@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,7 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
-import { colors, spacing, radius, typography, shadows } from '../utils/theme';
+import { colors, spacing, radius, typography, shadows, textInputWeb } from '../utils/theme';
+import type { QuoteResult } from '../services/paymentsService';
 
 interface Contact {
   id: string;
@@ -39,12 +40,24 @@ export default function SendMoneyScreen() {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [step, setStep] = useState<'form' | 'review' | 'sending' | 'success'>('form');
-  const [quote, setQuote] = useState<{ fee: string; total: string } | null>(null);
+  const [quote, setQuote] = useState<QuoteResult | null>(null);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [paymentId, setPaymentId] = useState<string | null>(null);
 
   const reviewAnim = useRef(new Animated.Value(0)).current;
-  const successAnim = useRef(new Animated.Value(0)).current;
+  /** Icon-only scale; avoid animating full-screen opacity so “sent” message is visible immediately. */
+  const successIconScale = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (step !== 'success') return;
+    successIconScale.setValue(0);
+    Animated.spring(successIconScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 60,
+      friction: 10,
+    }).start();
+  }, [step]);
 
   const recipient = selectedContact?.name ?? manualRecipient;
   const recipientWallet = selectedContact?.walletAddress ?? `https://wallet.example.com/${manualRecipient.toLowerCase().replace(/\s+/g, '-')}`;
@@ -54,7 +67,7 @@ export default function SendMoneyScreen() {
     Keyboard.dismiss();
     setLoadingQuote(true);
     const q = await getQuote(recipientWallet, parseFloat(amount));
-    setQuote(q);
+    setQuote(q ?? null);
     setLoadingQuote(false);
     setStep('review');
     Animated.spring(reviewAnim, {
@@ -74,7 +87,9 @@ export default function SendMoneyScreen() {
   };
 
   const confirmSend = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
     setStep('sending');
 
     const result = await sendMoney({
@@ -87,13 +102,9 @@ export default function SendMoneyScreen() {
     if (result.success) {
       setPaymentId(result.paymentId ?? null);
       setStep('success');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Animated.spring(successAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        tension: 60,
-        friction: 10,
-      }).start();
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
     } else {
       setStep('review');
       Alert.alert('Payment Failed', result.error ?? 'Something went wrong. Please try again.');
@@ -101,13 +112,13 @@ export default function SendMoneyScreen() {
   };
 
   const handleContactSelect = (contact: Contact) => {
-    Haptics.selectionAsync();
+    if (Platform.OS !== 'web') void Haptics.selectionAsync();
     setSelectedContact(selectedContact?.id === contact.id ? null : contact);
     if (selectedContact?.id !== contact.id) setManualRecipient('');
   };
 
   const handleQuickAmount = (a: string) => {
-    Haptics.selectionAsync();
+    if (Platform.OS !== 'web') void Haptics.selectionAsync();
     setAmount(a);
   };
 
@@ -117,31 +128,32 @@ export default function SendMoneyScreen() {
     return (
       <View style={styles.successContainer}>
         <LinearGradient colors={['#f4faf7', '#e6f7f0']} style={StyleSheet.absoluteFill} />
-        <Animated.View
-          style={[
-            styles.successContent,
-            {
-              opacity: successAnim,
-              transform: [{ scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }) }],
-            },
-          ]}
-        >
-          <View style={styles.successIcon}>
-            <LinearGradient
-              colors={[colors.primaryMid, colors.primary]}
-              style={styles.successIconGradient}
-            >
-              <Ionicons name="checkmark" size={40} color="#fff" />
-            </LinearGradient>
-          </View>
-          <Text style={styles.successTitle}>Money Sent!</Text>
-          <Text style={styles.successSubtitle}>Your payment was sent successfully via ILP.</Text>
+        <View style={styles.successContent}>
+          <Animated.View
+            style={{
+              transform: [{ scale: successIconScale.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
+            }}
+          >
+            <View style={styles.successIcon}>
+              <LinearGradient
+                colors={[colors.primaryMid, colors.primary]}
+                style={styles.successIconGradient}
+              >
+                <Ionicons name="checkmark" size={40} color="#fff" />
+              </LinearGradient>
+            </View>
+          </Animated.View>
+          <Text style={styles.successTitle}>Payment sent</Text>
+          <Text style={styles.successSubtitle}>
+            {`We've sent $${parseFloat(amount).toFixed(2)} to ${recipient}. You're all set.`}
+          </Text>
+          <Text style={styles.successHint}>{"You'll see this in Recent Activity on your dashboard."}</Text>
 
           <View style={styles.successDetails}>
             {[
               { label: 'To', value: recipient },
               { label: 'Amount', value: `$${parseFloat(amount).toFixed(2)}`, highlight: true },
-              { label: 'Fee', value: quote?.fee ?? '$0.02' },
+              { label: 'Fee', value: quote?.estimatedFee ?? '$0.02' },
               { label: 'Date', value: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
               { label: 'Payment ID', value: paymentId ? paymentId.slice(0, 16) + '...' : '—' },
               { label: 'Status', badge: true },
@@ -176,7 +188,7 @@ export default function SendMoneyScreen() {
               <Text style={styles.ghostBtnText}>Send More Money</Text>
             </TouchableOpacity>
           </View>
-        </Animated.View>
+        </View>
       </View>
     );
   }
@@ -242,7 +254,7 @@ export default function SendMoneyScreen() {
           <View style={styles.inputWrapper}>
             <Ionicons name="person" size={18} color={colors.textMuted} style={styles.inputIcon} />
             <TextInput
-              style={styles.input}
+              style={[styles.input, textInputWeb]}
               placeholder="Name or wallet address"
               placeholderTextColor={colors.textMuted}
               value={manualRecipient}
@@ -251,6 +263,7 @@ export default function SendMoneyScreen() {
                 setSelectedContact(null);
               }}
               returnKeyType="next"
+              underlineColorAndroid="transparent"
             />
           </View>
 
@@ -259,7 +272,7 @@ export default function SendMoneyScreen() {
           <View style={styles.inputWrapper}>
             <Ionicons name="cash" size={18} color={colors.textMuted} style={styles.inputIcon} />
             <TextInput
-              style={[styles.input, styles.amountInput]}
+              style={[styles.input, styles.amountInput, textInputWeb]}
               placeholder="0.00"
               placeholderTextColor={colors.textMuted}
               value={amount}
@@ -269,6 +282,7 @@ export default function SendMoneyScreen() {
               }}
               keyboardType="decimal-pad"
               returnKeyType="done"
+              underlineColorAndroid="transparent"
             />
             <Text style={styles.currencyTag}>USD</Text>
           </View>
@@ -294,12 +308,13 @@ export default function SendMoneyScreen() {
           <View style={styles.inputWrapper}>
             <Ionicons name="chatbubble-ellipses" size={18} color={colors.textMuted} style={styles.inputIcon} />
             <TextInput
-              style={styles.input}
+              style={[styles.input, textInputWeb]}
               placeholder="What's this for?"
               placeholderTextColor={colors.textMuted}
               value={note}
               onChangeText={setNote}
               returnKeyType="done"
+              underlineColorAndroid="transparent"
             />
           </View>
         </ScrollView>
@@ -367,8 +382,8 @@ export default function SendMoneyScreen() {
               {[
                 { label: 'To', value: recipient },
                 { label: 'Amount', value: `$${parseFloat(amount).toFixed(2)}`, highlight: true },
-                { label: 'Network Fee', value: quote?.fee ?? 'Calculating...' },
-                { label: 'Total Debit', value: quote?.total ?? `$${parseFloat(amount).toFixed(2)}` },
+                { label: 'Network Fee', value: quote?.estimatedFee ?? 'Calculating...' },
+                { label: 'Total Debit', value: quote?.totalDebit ?? `$${parseFloat(amount).toFixed(2)}` },
                 { label: 'Network', value: 'Interledger (ILP)' },
               ].map((row, i, arr) => (
                 <View key={i} style={[styles.detailRow, i < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.divider }]}>
@@ -390,7 +405,7 @@ export default function SendMoneyScreen() {
                 {step === 'sending' ? (
                   <>
                     <ActivityIndicator color="#fff" size="small" />
-                    <Text style={styles.primaryBtnText}>Sending via ILP...</Text>
+                    <Text style={styles.primaryBtnText}>Sending…</Text>
                   </>
                 ) : (
                   <>
@@ -400,6 +415,10 @@ export default function SendMoneyScreen() {
                 )}
               </LinearGradient>
             </TouchableOpacity>
+
+            {step === 'sending' ? (
+              <Text style={styles.sendingMessage}>Processing your payment—almost done.</Text>
+            ) : null}
 
             <Text style={styles.ilpNote}>
               ⚡ Powered by Interledger Protocol · Rafiki Network
@@ -475,7 +494,15 @@ const styles = StyleSheet.create({
   successIcon: { marginBottom: spacing.md },
   successIconGradient: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
   successTitle: { fontSize: typography.xxl, fontWeight: typography.extrabold, color: colors.textPrimary },
-  successSubtitle: { fontSize: typography.base, color: colors.textSecondary, textAlign: 'center' },
+  successSubtitle: { fontSize: typography.base, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.md, lineHeight: 22 },
+  successHint: { fontSize: typography.xs, color: colors.textMuted, textAlign: 'center', marginTop: spacing.sm, paddingHorizontal: spacing.lg },
+  sendingMessage: {
+    fontSize: typography.sm,
+    fontWeight: typography.semibold,
+    color: colors.primary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
   successDetails: { width: '100%', backgroundColor: colors.card, borderRadius: radius.xl, overflow: 'hidden', marginVertical: spacing.md, ...shadows.card },
   completedBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.primaryLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full },
   completedDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },

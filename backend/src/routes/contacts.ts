@@ -4,6 +4,7 @@ import { db } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { rafikiService } from '../services/rafikiService';
+import { requireRouteParam } from '../utils/routeParams';
 
 const router = Router();
 router.use(authenticate);
@@ -59,11 +60,12 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as AuthRequest).user.id;
-    const existing = await db.contact.findFirst({ where: { id: req.params.id, userId } });
+    const contactId = requireRouteParam(req.params.id);
+    const existing = await db.contact.findFirst({ where: { id: contactId, userId } });
     if (!existing) throw AppError.notFound('Contact');
 
     const updates = contactSchema.partial().parse(req.body);
-    const contact = await db.contact.update({ where: { id: req.params.id }, data: updates });
+    const contact = await db.contact.update({ where: { id: contactId }, data: updates });
     res.json(contact);
   } catch (err) { next(err); }
 });
@@ -72,9 +74,10 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as AuthRequest).user.id;
-    const existing = await db.contact.findFirst({ where: { id: req.params.id, userId } });
+    const contactId = requireRouteParam(req.params.id);
+    const existing = await db.contact.findFirst({ where: { id: contactId, userId } });
     if (!existing) throw AppError.notFound('Contact');
-    await db.contact.delete({ where: { id: req.params.id } });
+    await db.contact.delete({ where: { id: contactId } });
     res.status(204).send();
   } catch (err) { next(err); }
 });

@@ -117,3 +117,9 @@ export const shadows = {
     elevation: 10,
   },
 };
+
+/** Merge into TextInput `style` — removes the default harsh web focus outline (“black box”). */
+export const textInputWeb: Record<string, unknown> =
+  Platform.OS === 'web'
+    ? ({ outlineWidth: 0, outlineStyle: 'none', outlineColor: 'transparent' } as Record<string, unknown>)
+    : {};

@@ -4,7 +4,9 @@ import React, {
 import { useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { authService, AuthUser } from '../services/authService';
 import { getAccessToken, clearTokens, authEventEmitter } from '../services/apiClient';
-import { DEMO_USER, isDemoMode } from '../config/demo';
+import { clearIlpGnapToken } from '../services/ilpTokenStorage';
+import { DEMO_USER, isDemoMode, isFrontendOnly, useLiveAuth } from '../config/demo';
+import { clearDemoWallet } from '../services/demoLocalStore';
 
 interface AuthState {
   user: AuthUser | null;
@@ -39,9 +41,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: false,
   });
 
-  // On mount — demo session or restore JWT session (do not navigate here; wait for Root Layout + navigator)
+  // On mount — frontend-only: show welcome first. LAN demo: auto sign-in. Else JWT.
   useEffect(() => {
-    if (isDemoMode) {
+    if (isFrontendOnly) {
+      setState({ user: null, isLoading: false, isAuthenticated: false });
+      return;
+    }
+    if (isDemoMode && !useLiveAuth) {
       setState({
         user: {
           id: DEMO_USER.id,
@@ -97,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [state.isAuthenticated, state.isLoading, segments, rootNavigation?.key, router]);
 
   const login = useCallback(async (email: string, password: string) => {
-    if (isDemoMode) {
+    if (isDemoMode && !useLiveAuth) {
       setState({
         user: {
           id: DEMO_USER.id,
@@ -115,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (params: Parameters<typeof authService.register>[0]) => {
-    if (isDemoMode) {
+    if (isDemoMode && !useLiveAuth) {
       setState({
         user: {
           id: DEMO_USER.id,
@@ -128,12 +134,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       return;
     }
-    const { user } = await authService.register(params);
-    setState({ user, isLoading: false, isAuthenticated: true });
-  }, []);
+    await authService.register(params);
+    // Do not auto sign-in: clear tokens and send user to login (matches product flow + avoids silent dashboard redirect).
+    await clearTokens();
+    setState({ user: null, isLoading: false, isAuthenticated: false });
+    router.replace('/login?registered=1');
+  }, [router]);
 
   const enterDemo = useCallback(() => {
-    if (!isDemoMode) return;
+    if (!isDemoMode || useLiveAuth) return;
     setState({
       user: {
         id: DEMO_USER.id,
@@ -148,17 +157,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    if (isDemoMode) {
-      await clearTokens();
-    } else {
+    if (useLiveAuth) {
       await authService.logout();
+    } else {
+      await clearTokens();
     }
+    if (isFrontendOnly || (isDemoMode && !useLiveAuth)) {
+      clearDemoWallet();
+    }
+    await clearIlpGnapToken();
     setState({ user: null, isLoading: false, isAuthenticated: false });
     router.replace('/');
   }, [router]);
 
   const refreshUser = useCallback(async () => {
-    if (isDemoMode) return;
+    if (!useLiveAuth) return;
     try {
       const user = await authService.me();
       setState(s => ({ ...s, user }));

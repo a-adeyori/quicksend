@@ -16,7 +16,7 @@ RUN npm run build
 # ── Stage 2: Production ────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
 
-RUN apk add --no-cache dumb-init
+RUN apk add --no-cache dumb-init openssl libc6-compat
 
 WORKDIR /app
 
@@ -26,11 +26,14 @@ COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
 
-# Non-root user
-RUN addgroup -g 1001 -S nodejs && adduser -S quicksend -u 1001
+# Regenerate client + engines in this image (OpenSSL / musl must match runtime Alpine)
+RUN npx prisma generate
+
+# Non-root user — owns /app so prisma migrate can use bundled engines on Alpine
+RUN addgroup -g 1001 -S nodejs && adduser -S quicksend -u 1001 -G nodejs \
+  && chown -R quicksend:nodejs /app
 USER quicksend
 
 EXPOSE 3001

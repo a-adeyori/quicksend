@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../config/database';
 import { authenticate, requireRole } from '../middleware/auth';
+import { requireRouteParam } from '../utils/routeParams';
 
 const router = Router();
 router.use(authenticate, requireRole('ADMIN'));
@@ -28,8 +29,9 @@ router.get('/users', async (req: Request, res: Response, next: NextFunction) => 
 router.patch('/users/:id/kyc', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { status } = req.body;
+    const id = requireRouteParam(req.params.id);
     const user = await db.user.update({
-      where: { id: req.params.id },
+      where: { id },
       data: { kycStatus: status, kycVerifiedAt: status === 'APPROVED' ? new Date() : null },
       select: { id: true, email: true, kycStatus: true },
     });
@@ -61,9 +63,14 @@ router.get('/stats', async (_req: Request, res: Response, next: NextFunction) =>
       db.webhookEvent.groupBy({ by: ['status'], _count: true }),
     ]);
 
+    const completedCount =
+      typeof completedPayments._count === 'number'
+        ? completedPayments._count
+        : (completedPayments._count as { _all?: number })?._all ?? 0;
+
     res.json({
       users: totalUsers,
-      payments: { total: totalPayments, completed: completedPayments._count, volume: Number(completedPayments._sum.debitAmountCents ?? 0) },
+      payments: { total: totalPayments, completed: completedCount, volume: Number(completedPayments._sum.debitAmountCents ?? 0) },
       webhooks: webhookEvents,
     });
   } catch (err) { next(err); }

@@ -2,13 +2,15 @@
  * WalletContext — live API or interactive demo (no real money).
  */
 import React, {
-  createContext, useContext, useEffect, useState, useCallback, ReactNode,
+  createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode,
 } from 'react';
 import { walletService, WalletInfo } from '../services/walletService';
 import { paymentsService, Payment, QuoteResult } from '../services/paymentsService';
 import { contactsService, Contact } from '../services/contactsService';
 import { useAuth } from './AuthContext';
 import { DEMO_USER, isDemoMode } from '../config/demo';
+import { getIlpGnapToken, saveIlpGnapToken } from '../services/ilpTokenStorage';
+import { loadDemoWalletJson, saveDemoWalletJson } from '../services/demoLocalStore';
 
 interface WalletState {
   isConnected: boolean;
@@ -20,11 +22,14 @@ interface WalletState {
   error: string | null;
   hasMoreTransactions: boolean;
   nextCursor: string | null;
+  /** GNAP token for Open Payments / ILP (stored per device; Settings UI). */
+  ilpAccessToken: string | null;
 }
 
 interface WalletContextType extends WalletState {
   connectWallet: (url: string) => Promise<void>;
   disconnectWallet: () => Promise<void>;
+  setAccessToken: (token: string) => Promise<void>;
   refreshBalance: () => Promise<void>;
   refreshTransactions: () => Promise<void>;
   loadMoreTransactions: () => Promise<void>;
@@ -51,13 +56,13 @@ function buildDemoContacts(): Contact[] {
   ];
 }
 
-function buildDemoTransactions(): Payment[] {
+function buildDemoTransactions(senderId: string): Payment[] {
   const now = new Date().toISOString();
   return [
     {
       id: 'demo-tx-1',
       type: 'outgoing',
-      senderId: DEMO_USER.id,
+      senderId,
       recipientName: 'Sarah (Daughter)',
       recipientWalletAddress: 'https://ilp.interledger-test.dev/sarah',
       debitAmountCents: 5000,
@@ -74,7 +79,7 @@ function buildDemoTransactions(): Payment[] {
     {
       id: 'demo-tx-2',
       type: 'incoming',
-      senderId: DEMO_USER.id,
+      senderId,
       recipientName: 'Mike (Son)',
       recipientWalletAddress: 'https://ilp.interledger-test.dev/mike',
       debitAmountCents: 0,
@@ -91,6 +96,7 @@ function buildDemoTransactions(): Payment[] {
 }
 
 function makeDemoPayment(params: {
+  senderId: string;
   recipientWalletAddress: string;
   recipientName: string;
   amountDollars: number;
@@ -111,7 +117,7 @@ function makeDemoPayment(params: {
   const payment: Payment = {
     id: `demo-${Date.now()}`,
     type: 'outgoing',
-    senderId: DEMO_USER.id,
+    senderId: params.senderId,
     recipientName: params.recipientName,
     recipientWalletAddress: params.recipientWalletAddress,
     debitAmountCents: total,
@@ -128,8 +134,21 @@ function makeDemoPayment(params: {
   return { payment, newBalanceCents: params.balanceCentsBefore - total };
 }
 
+function parseStoredDemo(): Partial<WalletState> | null {
+  const raw = loadDemoWalletJson();
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw) as Partial<WalletState>;
+    if (p.balance && Array.isArray(p.transactions)) return p;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 function DemoWalletProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const senderId = user?.id ?? DEMO_USER.id;
   const [state, setState] = useState<WalletState>({
     isConnected: false,
     walletAddress: DEMO_PLATFORM_WALLET,
@@ -139,23 +158,96 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
       assetScale: 2,
       formatted: '$8,547.32',
     },
-    transactions: buildDemoTransactions(),
+    transactions: buildDemoTransactions(DEMO_USER.id),
     contacts: buildDemoContacts(),
     isLoading: false,
     error: null,
     hasMoreTransactions: false,
     nextCursor: null,
+    ilpAccessToken: null,
   });
+
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  useEffect(() => {
+    void (async () => {
+      const t = await getIlpGnapToken();
+      if (t) setState(s => ({ ...s, ilpAccessToken: t }));
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setState({
+        isConnected: false,
+        walletAddress: DEMO_PLATFORM_WALLET,
+        balance: {
+          value: '854732',
+          assetCode: 'USD',
+          assetScale: 2,
+          formatted: '$8,547.32',
+        },
+        transactions: buildDemoTransactions(DEMO_USER.id),
+        contacts: buildDemoContacts(),
+        isLoading: false,
+        error: null,
+        hasMoreTransactions: false,
+        nextCursor: null,
+        ilpAccessToken: null,
+      });
+      return;
+    }
+    const stored = parseStoredDemo();
+    if (stored?.balance && stored.transactions) {
+      setState((s) => ({
+        ...s,
+        balance: stored.balance!,
+        transactions: stored.transactions!,
+        contacts: stored.contacts ?? buildDemoContacts(),
+        isConnected: stored.isConnected ?? false,
+        walletAddress: stored.walletAddress ?? DEMO_PLATFORM_WALLET,
+        isLoading: false,
+        error: null,
+      }));
+    } else {
+      setState((s) => ({
+        ...s,
+        transactions: buildDemoTransactions(user?.id ?? DEMO_USER.id),
+        isLoading: false,
+        error: null,
+        isConnected: false,
+      }));
+    }
+  }, [isAuthenticated, user?.id]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    setState(s => ({
-      ...s,
-      isLoading: false,
-      error: null,
-      isConnected: false,
-    }));
-  }, [isAuthenticated]);
+    const id = setTimeout(() => {
+      saveDemoWalletJson(
+        JSON.stringify({
+          balance: state.balance,
+          transactions: state.transactions,
+          contacts: state.contacts,
+          isConnected: state.isConnected,
+          walletAddress: state.walletAddress,
+        })
+      );
+    }, 450);
+    return () => clearTimeout(id);
+  }, [
+    isAuthenticated,
+    state.balance,
+    state.transactions,
+    state.contacts,
+    state.isConnected,
+    state.walletAddress,
+  ]);
+
+  const setAccessToken = useCallback(async (token: string) => {
+    await saveIlpGnapToken(token);
+    setState(s => ({ ...s, ilpAccessToken: token }));
+  }, []);
 
   const connectWallet = useCallback(async (url: string) => {
     setState(s => ({ ...s, isLoading: true, error: null }));
@@ -199,36 +291,35 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
   }): Promise<{ success: boolean; paymentId?: string; error?: string }> => {
     setState(s => ({ ...s, isLoading: true, error: null }));
     await new Promise(r => setTimeout(r, 350));
-    let result: { success: boolean; paymentId?: string; error?: string } = { success: false };
-    setState((s) => {
-      const balanceCents = s.balance ? parseInt(s.balance.value, 10) : 0;
-      const { payment, newBalanceCents, error } = makeDemoPayment({
-        ...params,
-        balanceCentsBefore: balanceCents,
-      });
-      if (error) {
-        result = { success: false, error };
-        return { ...s, isLoading: false, error };
-      }
-      result = { success: true, paymentId: payment.id };
-      return {
-        ...s,
-        isLoading: false,
-        error: null,
-        transactions: [payment, ...s.transactions],
-        balance: s.balance
-          ? {
-              ...s.balance,
-              value: newBalanceCents.toString(),
-              formatted: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
-                newBalanceCents / 100
-              ),
-            }
-          : null,
-      };
+    // Read latest state once (avoids React 18 Strict Mode double-invoking setState updaters and corrupting the return value).
+    const s = stateRef.current;
+    const balanceCents = s.balance ? parseInt(s.balance.value, 10) : 0;
+    const { payment, newBalanceCents, error } = makeDemoPayment({
+      senderId,
+      ...params,
+      balanceCentsBefore: balanceCents,
     });
-    return result;
-  }, []);
+    if (error) {
+      setState(prev => ({ ...prev, isLoading: false, error }));
+      return { success: false, error };
+    }
+    setState(prev => ({
+      ...prev,
+      isLoading: false,
+      error: null,
+      transactions: [payment, ...prev.transactions],
+      balance: prev.balance
+        ? {
+            ...prev.balance,
+            value: newBalanceCents.toString(),
+            formatted: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+              newBalanceCents / 100
+            ),
+          }
+        : null,
+    }));
+    return { success: true, paymentId: payment.id };
+  }, [senderId]);
 
   return (
     <WalletContext.Provider
@@ -236,6 +327,7 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
         ...state,
         connectWallet,
         disconnectWallet,
+        setAccessToken,
         refreshBalance,
         refreshTransactions,
         loadMoreTransactions,
@@ -262,13 +354,20 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
     error: null,
     hasMoreTransactions: false,
     nextCursor: null,
+    ilpAccessToken: null,
   });
+
+  const setAccessToken = useCallback(async (token: string) => {
+    await saveIlpGnapToken(token);
+    setState(s => ({ ...s, ilpAccessToken: token }));
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
     (async () => {
       setState(s => ({ ...s, isLoading: true }));
       try {
+        const ilpTok = await getIlpGnapToken();
         const [walletInfo, txPage, contacts] = await Promise.all([
           walletService.getInfo(),
           paymentsService.list({ limit: 20 }),
@@ -283,6 +382,7 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
           hasMoreTransactions: txPage.pagination.hasNextPage,
           nextCursor: txPage.pagination.nextCursor,
           contacts,
+          ilpAccessToken: ilpTok,
           isLoading: false,
           error: null,
         }));
@@ -398,7 +498,7 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
   return (
     <WalletContext.Provider value={{
       ...state,
-      connectWallet, disconnectWallet,
+      connectWallet, disconnectWallet, setAccessToken,
       refreshBalance, refreshTransactions, loadMoreTransactions,
       refreshContacts, getQuote, sendMoney,
     }}

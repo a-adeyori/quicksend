@@ -10,6 +10,7 @@
  */
 
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -24,17 +25,34 @@ export const TOKEN_KEYS = {
   refresh: 'qs_refresh_token',
 } as const;
 
+const isWeb = () => Platform.OS === 'web';
+
 export async function getAccessToken(): Promise<string | null> {
+  if (isWeb()) {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(TOKEN_KEYS.access);
+  }
   try { return await SecureStore.getItemAsync(TOKEN_KEYS.access); }
   catch { return null; }
 }
 
 export async function getRefreshToken(): Promise<string | null> {
+  if (isWeb()) {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(TOKEN_KEYS.refresh);
+  }
   try { return await SecureStore.getItemAsync(TOKEN_KEYS.refresh); }
   catch { return null; }
 }
 
 export async function saveTokens(access: string, refresh: string) {
+  if (isWeb()) {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(TOKEN_KEYS.access, access);
+      localStorage.setItem(TOKEN_KEYS.refresh, refresh);
+    }
+    return;
+  }
   await Promise.all([
     SecureStore.setItemAsync(TOKEN_KEYS.access, access),
     SecureStore.setItemAsync(TOKEN_KEYS.refresh, refresh),
@@ -42,6 +60,13 @@ export async function saveTokens(access: string, refresh: string) {
 }
 
 export async function clearTokens() {
+  if (isWeb()) {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(TOKEN_KEYS.access);
+      localStorage.removeItem(TOKEN_KEYS.refresh);
+    }
+    return;
+  }
   await Promise.all([
     SecureStore.deleteItemAsync(TOKEN_KEYS.access),
     SecureStore.deleteItemAsync(TOKEN_KEYS.refresh),
@@ -67,12 +92,22 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
 let isRefreshing = false;
 let refreshQueue: Array<(token: string) => void> = [];
 
+/** Login/register 401 = wrong credentials — do not run refresh flow (avoids triple requests + spurious logout). */
+function isAuthCredentialEndpoint(config: InternalAxiosRequestConfig | undefined): boolean {
+  const path = (config?.url ?? '').replace(/\?.*$/, '');
+  return path === '/auth/login' || path === '/auth/register';
+}
+
 api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
     if (error.response?.status !== 401 || original._retry) {
+      return Promise.reject(formatError(error));
+    }
+
+    if (isAuthCredentialEndpoint(original)) {
       return Promise.reject(formatError(error));
     }
 

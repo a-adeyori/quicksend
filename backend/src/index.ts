@@ -82,12 +82,15 @@ app.use((_req, res) => {
 // ─── Error handler ─────────────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// ─── Start server ──────────────────────────────────────────────────────────────
+// ─── Start server (standalone Node / Docker only — not when loaded by Vercel `api/`) ─
 const PORT = config.port;
-app.listen(PORT, () => {
-  logger.info(`🚀 QuickSend API running on port ${PORT} [${config.nodeEnv}]`);
-  logger.info(`📡 ILP Resource Server: ${config.rafikiResourceServerUrl}`);
-  logger.info(`🔑 Auth Server:         ${config.rafikiAuthServerUrl}`);
-});
+const isPrimaryModule = require.main === module;
+if (isPrimaryModule) {
+  app.listen(PORT, () => {
+    logger.info(`🚀 QuickSend API running on port ${PORT} [${config.nodeEnv}]`);
+    logger.info(`📡 ILP Resource Server: ${config.rafikiResourceServerUrl}`);
+    logger.info(`🔑 Auth Server:         ${config.rafikiAuthServerUrl}`);
+  });
+}
 
 export default app;

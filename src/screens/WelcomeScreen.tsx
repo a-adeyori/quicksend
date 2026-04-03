@@ -7,12 +7,14 @@ import {
   Animated,
   Dimensions,
   StatusBar,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { colors, spacing, radius, typography } from '../utils/theme';
-import { isDemoMode } from '../config/demo';
+import { isDemoMode, isFrontendOnly, useLiveAuth } from '../config/demo';
 import { useAuth } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
@@ -66,6 +68,9 @@ export default function WelcomeScreen() {
   };
 
   const handleNext = () => {
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     if (step < slides.length - 1) {
       animateTransition(step + 1);
     } else {
@@ -81,7 +86,8 @@ export default function WelcomeScreen() {
 
   return (
     <LinearGradient
-      colors={['#f4faf7', '#e6f7f0', '#d0efe2']}
+      colors={['#f8fdfb', '#e8f8f1', '#cfead8', '#b8dfc9']}
+      locations={[0, 0.35, 0.72, 1]}
       style={styles.container}
     >
       <StatusBar barStyle="dark-content" />
@@ -144,18 +150,34 @@ export default function WelcomeScreen() {
           <Text style={styles.secondaryBtnText}>I already have an account</Text>
         </TouchableOpacity>
 
-        {isDemoMode ? (
-          <TouchableOpacity style={styles.demoBtn} onPress={enterDemo} activeOpacity={0.85}>
-            <Text style={styles.demoBtnText}>Start interactive demo (no real money)</Text>
+        {isDemoMode && !useLiveAuth ? (
+          <TouchableOpacity
+            style={styles.demoBtn}
+            onPress={() => {
+              if (Platform.OS !== 'web') void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              enterDemo();
+            }}
+            activeOpacity={0.88}
+          >
+            <Ionicons name="sparkles" size={18} color={colors.primary} />
+            <Text style={styles.demoBtnText}>
+              {isFrontendOnly
+                ? 'Launch interactive demo — runs entirely in your browser'
+                : 'Start interactive demo (no sign-in, no real money)'}
+            </Text>
           </TouchableOpacity>
         ) : null}
       </View>
 
       {/* Footer */}
       <Text style={styles.footer}>
-        {isDemoMode
+        {isFrontendOnly
+          ? '✨ 100% offline UI · Your session & demo wallet stay on this device'
+          : isDemoMode && !useLiveAuth
           ? '🎮 Demo build — simulated money & flows · Not financial advice'
-          : '🔒 FDIC Insured · 256-bit Encryption · ILP Powered'}
+          : isDemoMode && useLiveAuth
+            ? '🔐 Secure account · Simulated balance · Add ILP token in Settings · Not financial advice'
+            : '🔒 FDIC Insured · 256-bit Encryption · ILP Powered'}
       </Text>
     </LinearGradient>
   );
@@ -260,19 +282,28 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
   demoBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.md,
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
     paddingHorizontal: spacing.lg,
-    borderRadius: radius.lg,
-    backgroundColor: colors.primaryLight,
-    borderWidth: 1,
-    borderColor: colors.primary + '40',
+    borderRadius: radius.xl,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderWidth: 1.5,
+    borderColor: colors.primary + '55',
+    ...Platform.select({
+      web: { boxShadow: '0 8px 32px rgba(45, 158, 107, 0.12)' } as object,
+      default: {},
+    }),
   },
   demoBtnText: {
+    flex: 1,
     fontSize: typography.sm,
     fontWeight: typography.semibold,
-    color: colors.primary,
+    color: colors.textPrimary,
     textAlign: 'center',
+    lineHeight: 20,
   },
   footer: {
     textAlign: 'center',

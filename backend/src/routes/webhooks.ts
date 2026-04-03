@@ -19,6 +19,7 @@ import { db } from '../config/database';
 import { config } from '../config/env';
 import { logger } from '../utils/logger';
 import { formatCurrency, dollarsToUnits } from '../services/rafikiService';
+import { toInputJson } from '../utils/jsonForPrisma';
 
 const router = Router();
 
@@ -174,7 +175,7 @@ async function handleOutgoingFailed(data: Record<string, unknown>) {
       type: 'PAYMENT_FAILED',
       title: 'Payment Failed',
       body: `Your payment to ${payment.recipientName} could not be completed.`,
-      data: { paymentId, error: data.error },
+      data: toInputJson({ paymentId, error: data.error }),
     },
   });
 

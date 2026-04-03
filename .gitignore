@@ -5,3 +5,13 @@
 expo-env.d.ts
 # @end expo-cli
 node_modules
+backend/data/db.json
+dist
+
+# Secrets — use .env.example as the template
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example

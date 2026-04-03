@@ -1,13 +1,14 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
-import { PaymentStatus } from '@prisma/client';
+import type { PaymentStatus } from '../jsonDb/types';
 import { db } from '../config/database';
 import { config } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { rafikiService, dollarsToUnits, unitsToDollars, formatCurrency } from '../services/rafikiService';
 import { logger } from '../utils/logger';
+import { requireRouteParam } from '../utils/routeParams';
 
 const router = Router();
 router.use(authenticate);
@@ -111,9 +112,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as AuthRequest).user.id;
+    const paymentId = requireRouteParam(req.params.id);
     const payment = await db.payment.findFirst({
       where: {
-        id: req.params.id,
+        id: paymentId,
         OR: [{ senderId: userId }, { receiverId: userId }],
       },
     });
@@ -370,8 +372,9 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
 router.post('/:id/cancel', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as AuthRequest).user.id;
+    const paymentId = requireRouteParam(req.params.id);
     const payment = await db.payment.findFirst({
-      where: { id: req.params.id, senderId: userId },
+      where: { id: paymentId, senderId: userId },
     });
     if (!payment) throw AppError.notFound('Payment');
     if (!['PENDING', 'QUOTED'].includes(payment.status)) {
