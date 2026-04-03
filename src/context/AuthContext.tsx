@@ -1,7 +1,7 @@
 import React, {
   createContext, useContext, useEffect, useState, useCallback, ReactNode,
 } from 'react';
-import { useRouter, useSegments } from 'expo-router';
+import { useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { authService, AuthUser } from '../services/authService';
 import { getAccessToken, clearTokens, authEventEmitter } from '../services/apiClient';
 import { DEMO_USER, isDemoMode } from '../config/demo';
@@ -23,16 +23,23 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const PUBLIC_SEGMENTS = new Set(['index', 'onboarding', 'login']);
+
+function isPublicRouteSegment(first: string | undefined): boolean {
+  return first === undefined || PUBLIC_SEGMENTS.has(first);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
+  const rootNavigation = useRootNavigationState();
   const [state, setState] = useState<AuthState>({
     user: null,
     isLoading: true,
     isAuthenticated: false,
   });
 
-  // On mount — demo session or restore JWT session
+  // On mount — demo session or restore JWT session (do not navigate here; wait for Root Layout + navigator)
   useEffect(() => {
     if (isDemoMode) {
       setState({
@@ -45,7 +52,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading: false,
         isAuthenticated: true,
       });
-      router.replace('/dashboard');
       return;
     }
     (async () => {
@@ -74,13 +80,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => authEventEmitter.off(handler);
   }, [router]);
 
-  // Route guard: unauthenticated users → welcome screen
+  // Route guard — only after navigator is mounted (avoids "navigate before Root Layout" crash)
   useEffect(() => {
-    if (state.isLoading) return;
-    const inAuthGroup = segments[0] !== '(app)';
-    if (!state.isAuthenticated && !inAuthGroup) router.replace('/');
-    if (state.isAuthenticated && inAuthGroup) router.replace('/dashboard');
-  }, [state.isAuthenticated, state.isLoading, segments]);
+    if (state.isLoading || !rootNavigation?.key) return;
+
+    const first = segments[0];
+    const isPublic = isPublicRouteSegment(first);
+
+    if (!state.isAuthenticated && !isPublic) {
+      router.replace('/');
+      return;
+    }
+    if (state.isAuthenticated && isPublic) {
+      router.replace('/dashboard');
+    }
+  }, [state.isAuthenticated, state.isLoading, segments, rootNavigation?.key, router]);
 
   const login = useCallback(async (email: string, password: string) => {
     if (isDemoMode) {
@@ -130,8 +144,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading: false,
       isAuthenticated: true,
     });
-    router.replace('/dashboard');
-  }, [router]);
+    // Route guard will send to /dashboard once navigator is ready
+  }, []);
 
   const logout = useCallback(async () => {
     if (isDemoMode) {
