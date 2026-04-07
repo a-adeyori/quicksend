@@ -54,10 +54,21 @@ export const useLiveAuth =
   envWantsLiveAuth && !isFrontendOnly && !isBackendUnreachableFromThisClient;
 
 /**
- * Auto sign-in as demo user (no API) — demo mode, or unreachable backend with no live auth.
+ * Skip welcome and open already signed in as the demo user (local dev where API URL is reachable).
+ * Hosted builds (e.g. Vercel) with a loopback API URL are "unreachable" — we do not auto-login so
+ * welcome → sign in / try demo still appear.
  */
 export const useAutoDemoSession =
-  (isDemoMode || isBackendUnreachableFromThisClient) && !useLiveAuth;
+  isDemoMode &&
+  !useLiveAuth &&
+  !isFrontendOnly &&
+  !isBackendUnreachableFromThisClient;
+
+/**
+ * Login / register without calling the API (demo mode, or unreachable API fallback).
+ */
+export const canUseLocalDemoLogin =
+  !useLiveAuth && (isDemoMode || isBackendUnreachableFromThisClient);
 
 /** Use local simulated wallet instead of REST /payments etc. */
 export const useDemoWallet = isDemoMode || isBackendUnreachableFromThisClient;

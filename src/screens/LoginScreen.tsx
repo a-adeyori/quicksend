@@ -18,7 +18,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { colors, spacing, radius, typography, shadows, textInputWeb } from '../utils/theme';
 import { useAuth } from '../context/AuthContext';
 import { isApiError } from '../services/apiClient';
-import { isFrontendOnly, useAutoDemoSession } from '../config/demo';
+import { canUseLocalDemoLogin, isFrontendOnly } from '../config/demo';
 
 function errMessage(err: unknown): string {
   if (isApiError(err)) return err.message;
@@ -172,7 +172,7 @@ export default function LoginScreen() {
           </LinearGradient>
         </TouchableOpacity>
 
-        {(isFrontendOnly || useAutoDemoSession) && (
+        {(isFrontendOnly || canUseLocalDemoLogin) && (
           <TouchableOpacity
             style={styles.demoLaunch}
             onPress={() => {

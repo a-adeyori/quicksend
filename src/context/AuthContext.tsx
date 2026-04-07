@@ -7,7 +7,8 @@ import { getAccessToken, clearTokens, authEventEmitter } from '../services/apiCl
 import { clearIlpGnapToken } from '../services/ilpTokenStorage';
 import {
   DEMO_USER,
-  isDemoMode,
+  canUseLocalDemoLogin,
+  isBackendUnreachableFromThisClient,
   isFrontendOnly,
   useAutoDemoSession,
   useLiveAuth,
@@ -47,9 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: false,
   });
 
-  // On mount — frontend-only: show welcome first. LAN demo: auto sign-in. Else JWT.
+  // On mount — frontend-only or unreachable API: welcome first. Local LAN demo: optional auto sign-in. Else JWT.
   useEffect(() => {
-    if (isFrontendOnly) {
+    if (isFrontendOnly || isBackendUnreachableFromThisClient) {
       setState({ user: null, isLoading: false, isAuthenticated: false });
       return;
     }
@@ -109,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [state.isAuthenticated, state.isLoading, segments, rootNavigation?.key, router]);
 
   const login = useCallback(async (email: string, password: string) => {
-    if (useAutoDemoSession) {
+    if (canUseLocalDemoLogin) {
       setState({
         user: {
           id: DEMO_USER.id,
@@ -127,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (params: Parameters<typeof authService.register>[0]) => {
-    if (useAutoDemoSession) {
+    if (canUseLocalDemoLogin) {
       setState({
         user: {
           id: DEMO_USER.id,
@@ -148,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const enterDemo = useCallback(() => {
-    if (useLiveAuth || (!isDemoMode && !useAutoDemoSession)) return;
+    if (useLiveAuth || !canUseLocalDemoLogin) return;
     setState({
       user: {
         id: DEMO_USER.id,
@@ -168,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       await clearTokens();
     }
-    if (isFrontendOnly || useAutoDemoSession) {
+    if (isFrontendOnly || canUseLocalDemoLogin) {
       clearDemoWallet();
     }
     await clearIlpGnapToken();

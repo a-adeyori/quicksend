@@ -15,9 +15,9 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, radius, typography } from '../utils/theme';
 import {
+  canUseLocalDemoLogin,
   isDemoMode,
   isFrontendOnly,
-  useAutoDemoSession,
   useDemoWallet,
   useLiveAuth,
 } from '../config/demo';
@@ -156,7 +156,7 @@ export default function WelcomeScreen() {
           <Text style={styles.secondaryBtnText}>I already have an account</Text>
         </TouchableOpacity>
 
-        {(isFrontendOnly || useAutoDemoSession) ? (
+        {(isFrontendOnly || canUseLocalDemoLogin) ? (
           <TouchableOpacity
             style={styles.demoBtn}
             onPress={() => {
