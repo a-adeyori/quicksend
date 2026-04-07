@@ -12,11 +12,44 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
+function devMachineHostFromExpo(): string | null {
+  const dbg = Constants.expoGoConfig?.debuggerHost;
+  if (dbg && typeof dbg === 'string') {
+    const host = dbg.split(':')[0];
+    if (host) return host;
+  }
+  const uri = Constants.expoConfig?.hostUri;
+  if (uri && typeof uri === 'string') {
+    const host = uri.split(':')[0];
+    if (host && host !== 'localhost' && host !== '127.0.0.1') return host;
+  }
+  return null;
+}
+
+/**
+ * On a physical device, `localhost` in EXPO_PUBLIC_API_URL points at the phone, not your PC.
+ * When Expo provides the packager host (LAN IP), rewrite loopback to that host.
+ */
+function resolveApiBaseUrl(): string {
+  const raw = (process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1').trim();
+  if (Platform.OS === 'web') return raw;
+  const lan = devMachineHostFromExpo();
+  if (!lan) return raw;
+  try {
+    const u = new URL(raw);
+    if (u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') return raw;
+    u.hostname = lan;
+    return u.href.replace(/\/?$/, '');
+  } catch {
+    return raw;
+  }
+}
+
+const BASE_URL = resolveApiBaseUrl();
 
 // ─── Token storage keys ───────────────────────────────────────────────────────
 
@@ -171,6 +204,14 @@ export interface ApiError {
 
 function formatError(error: AxiosError): ApiError {
   const data = error.response?.data as Record<string, unknown> | undefined;
+  if (!error.response && error.message === 'Network Error') {
+    return {
+      message:
+        'Cannot reach the API. On web, use a public HTTPS EXPO_PUBLIC_API_URL (not localhost). On a phone, use your computer\'s LAN IP or deploy the backend.',
+      code: 'NETWORK',
+      details: { baseURL: BASE_URL },
+    };
+  }
   return {
     message: (data?.error as string) ?? error.message ?? 'An unexpected error occurred',
     code: data?.code as string | undefined,

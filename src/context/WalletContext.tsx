@@ -8,7 +8,7 @@ import { walletService, WalletInfo } from '../services/walletService';
 import { paymentsService, Payment, QuoteResult } from '../services/paymentsService';
 import { contactsService, Contact } from '../services/contactsService';
 import { useAuth } from './AuthContext';
-import { DEMO_USER, isDemoMode } from '../config/demo';
+import { DEMO_USER, useDemoWallet } from '../config/demo';
 import { getIlpGnapToken, saveIlpGnapToken } from '../services/ilpTokenStorage';
 import { loadDemoWalletJson, saveDemoWalletJson } from '../services/demoLocalStore';
 
@@ -509,7 +509,7 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
 }
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  if (isDemoMode) {
+  if (useDemoWallet) {
     return <DemoWalletProvider>{children}</DemoWalletProvider>;
   }
   return <LiveWalletProvider>{children}</LiveWalletProvider>;

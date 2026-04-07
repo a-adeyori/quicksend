@@ -15,7 +15,7 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
 import { colors, spacing, radius, typography, shadows } from '../utils/theme';
-import { isDemoMode, useLiveAuth } from '../config/demo';
+import { isDemoMode, useDemoWallet, useLiveAuth } from '../config/demo';
 import { useWebSpeechRecognition } from '../hooks/useWebSpeechRecognition';
 
 const IS_WEB = Platform.OS === 'web';
@@ -208,7 +208,7 @@ export default function VoiceAssistantScreen() {
       const match = contacts.find(c => c.name.toLowerCase().includes(contactName));
       const displayName = match?.name ?? parsed.recipient;
 
-      reply = isDemoMode
+      reply = useDemoWallet
         ? `Got it! Simulating a send of $${parsed.amount.toFixed(2)} to ${displayName} (demo — no real money). Confirm?`
         : `Got it! Sending $${parsed.amount.toFixed(2)} to ${displayName} via ILP. Confirm?`;
 
@@ -228,7 +228,7 @@ export default function VoiceAssistantScreen() {
       });
 
       if (result.success) {
-        const confirmReply = isDemoMode
+        const confirmReply = useDemoWallet
           ? `✅ Demo complete! $${parsed.amount.toFixed(2)} recorded for ${displayName}. No real funds were moved.`
           : `✅ Done! $${parsed.amount.toFixed(2)} sent to ${displayName} via the Interledger network.`;
         setHistory(h => [...h.slice(0, -1), { user: text, assistant: confirmReply }]);
@@ -391,7 +391,7 @@ export default function VoiceAssistantScreen() {
 
       {/* ILP note */}
       <Text style={styles.ilpNote}>
-        {isDemoMode && !useLiveAuth
+        {useDemoWallet && !useLiveAuth
           ? IS_WEB
             ? '⚡ Demo — use mic (HTTPS) or examples; no real payments'
             : '⚡ Interactive demo — voice uses simulated recognition; no real payments'

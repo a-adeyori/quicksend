@@ -14,7 +14,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, radius, typography } from '../utils/theme';
-import { isDemoMode, isFrontendOnly, useLiveAuth } from '../config/demo';
+import {
+  isDemoMode,
+  isFrontendOnly,
+  useAutoDemoSession,
+  useDemoWallet,
+  useLiveAuth,
+} from '../config/demo';
 import { useAuth } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
@@ -150,7 +156,7 @@ export default function WelcomeScreen() {
           <Text style={styles.secondaryBtnText}>I already have an account</Text>
         </TouchableOpacity>
 
-        {isDemoMode && !useLiveAuth ? (
+        {(isFrontendOnly || useAutoDemoSession) ? (
           <TouchableOpacity
             style={styles.demoBtn}
             onPress={() => {
@@ -173,7 +179,7 @@ export default function WelcomeScreen() {
       <Text style={styles.footer}>
         {isFrontendOnly
           ? '✨ 100% offline UI · Your session & demo wallet stay on this device'
-          : isDemoMode && !useLiveAuth
+          : useDemoWallet && !useLiveAuth
           ? '🎮 Demo build — simulated money & flows · Not financial advice'
           : isDemoMode && useLiveAuth
             ? '🔐 Secure account · Simulated balance · Add ILP token in Settings · Not financial advice'

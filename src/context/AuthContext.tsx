@@ -5,7 +5,13 @@ import { useRouter, useSegments, useRootNavigationState } from 'expo-router';
 import { authService, AuthUser } from '../services/authService';
 import { getAccessToken, clearTokens, authEventEmitter } from '../services/apiClient';
 import { clearIlpGnapToken } from '../services/ilpTokenStorage';
-import { DEMO_USER, isDemoMode, isFrontendOnly, useLiveAuth } from '../config/demo';
+import {
+  DEMO_USER,
+  isDemoMode,
+  isFrontendOnly,
+  useAutoDemoSession,
+  useLiveAuth,
+} from '../config/demo';
 import { clearDemoWallet } from '../services/demoLocalStore';
 
 interface AuthState {
@@ -47,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState({ user: null, isLoading: false, isAuthenticated: false });
       return;
     }
-    if (isDemoMode && !useLiveAuth) {
+    if (useAutoDemoSession) {
       setState({
         user: {
           id: DEMO_USER.id,
@@ -103,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [state.isAuthenticated, state.isLoading, segments, rootNavigation?.key, router]);
 
   const login = useCallback(async (email: string, password: string) => {
-    if (isDemoMode && !useLiveAuth) {
+    if (useAutoDemoSession) {
       setState({
         user: {
           id: DEMO_USER.id,
@@ -121,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (params: Parameters<typeof authService.register>[0]) => {
-    if (isDemoMode && !useLiveAuth) {
+    if (useAutoDemoSession) {
       setState({
         user: {
           id: DEMO_USER.id,
@@ -142,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const enterDemo = useCallback(() => {
-    if (!isDemoMode || useLiveAuth) return;
+    if (useLiveAuth || (!isDemoMode && !useAutoDemoSession)) return;
     setState({
       user: {
         id: DEMO_USER.id,
@@ -162,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       await clearTokens();
     }
-    if (isFrontendOnly || (isDemoMode && !useLiveAuth)) {
+    if (isFrontendOnly || useAutoDemoSession) {
       clearDemoWallet();
     }
     await clearIlpGnapToken();

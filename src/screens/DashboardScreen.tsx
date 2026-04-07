@@ -18,7 +18,7 @@ import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
 import { colors, spacing, radius, typography, shadows } from '../utils/theme';
 import type { Payment } from '../services/paymentsService';
-import { isDemoMode, isFrontendOnly, useLiveAuth } from '../config/demo';
+import { isDemoMode, isFrontendOnly, useDemoWallet, useLiveAuth } from '../config/demo';
 
 function paymentUsd(p: Payment): number {
   const cents = p.type === 'incoming' ? p.receiveAmountCents : p.debitAmountCents;
@@ -124,7 +124,7 @@ export default function DashboardScreen() {
                 ? '✨ Interactive demo · Saved locally on this device'
                 : isDemoMode && useLiveAuth
                   ? '⚪ Simulated balance · Secure account'
-                  : isDemoMode
+                  : useDemoWallet
                     ? '⚪ Demo Mode'
                     : '⚪ Wallet'}
           </Text>
