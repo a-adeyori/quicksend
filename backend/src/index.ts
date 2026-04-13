@@ -19,6 +19,20 @@ import walletRoutes from './routes/wallet';
 import webhookRoutes from './routes/webhooks';
 import adminRoutes from './routes/admin';
 
+// ─── Catch silent crashes ──────────────────────────────────────────────────────
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err.message);
+  console.error(err.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason);
+  process.exit(1);
+});
+
+console.log('>> index.ts loaded, building express app...');
+
 const app = express();
 
 // ─── Security middleware ───────────────────────────────────────────────────────
@@ -41,7 +55,6 @@ const globalLimiter = rateLimit({
 app.use('/api', globalLimiter);
 
 // ─── Body parsing ──────────────────────────────────────────────────────────────
-// Webhooks need raw body for signature verification — register BEFORE json()
 app.use('/api/v1/webhooks', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -66,6 +79,8 @@ app.get('/health', (_req, res) => {
 // ─── API Routes ────────────────────────────────────────────────────────────────
 const API = `/api/${config.apiVersion}`;
 
+console.log(`>> Registering routes under ${API}`);
+
 app.use(`${API}/auth`,      authRoutes);
 app.use(`${API}/users`,     userRoutes);
 app.use(`${API}/payments`,  paymentRoutes);
@@ -82,11 +97,15 @@ app.use((_req, res) => {
 // ─── Error handler ─────────────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// ─── Start server (standalone Node / Docker only — not when loaded by Vercel `api/`) ─
+// ─── Start server ──────────────────────────────────────────────────────────────
 const PORT = config.port;
 const isPrimaryModule = require.main === module;
+
+console.log(`>> isPrimaryModule: ${isPrimaryModule}, PORT: ${PORT}`);
+
 if (isPrimaryModule) {
   app.listen(PORT, () => {
+    console.log(`>> SERVER STARTED ON PORT ${PORT}`);
     logger.info(`🚀 QuickSend API running on port ${PORT} [${config.nodeEnv}]`);
     logger.info(`📡 ILP Resource Server: ${config.rafikiResourceServerUrl}`);
     logger.info(`🔑 Auth Server:         ${config.rafikiAuthServerUrl}`);
