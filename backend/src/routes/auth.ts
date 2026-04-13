@@ -7,6 +7,7 @@ import { config } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { logger } from '../utils/logger';
+import { rafikiAdminService } from '../services/rafikiAdminService';
 
 const router = Router();
 
@@ -22,6 +23,7 @@ const registerSchema = z.object({
     z.string().regex(/^\+?[\d\s\-()]{7,20}$/).optional()
   ),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  createWalletAddress: z.boolean().optional().default(true),
 });
 
 const loginSchema = z.object({
@@ -82,6 +84,35 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
       select: { id: true, email: true, firstName: true, lastName: true, role: true },
     });
 
+    // Optional: auto-create a Rafiki wallet address for this user.
+    // If admin API is not configured, registration still succeeds.
+    let walletAddress: string | null = null;
+    if (body.createWalletAddress) {
+      try {
+        if (config.rafikiWalletAssetId && config.rafikiAdminApiUrl && config.rafikiTenantId && config.rafikiTenantApiSecret) {
+          const created = await rafikiAdminService.createWalletAddress({
+            publicName: `${user.firstName} ${user.lastName}`.trim(),
+            assetId: config.rafikiWalletAssetId,
+          });
+          walletAddress = created.url;
+          await db.user.update({
+            where: { id: user.id },
+            data: {
+              walletAddress: created.url,
+              ilpAccountId: created.id,
+              assetCode: created.asset?.code ?? 'USD',
+              assetScale: created.asset?.scale ?? 2,
+            },
+          });
+        }
+      } catch (walletErr) {
+        logger.warn('User registered but wallet creation failed', {
+          userId: user.id,
+          error: (walletErr as Error).message,
+        });
+      }
+    }
+
     // Tokens
     const accessToken = generateAccessToken(user.id, user.email, user.role);
     const refreshToken = generateRefreshToken(user.id);
@@ -103,7 +134,13 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     logger.info('User registered', { userId: user.id, email: user.email });
 
     res.status(201).json({
-      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName },
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        walletAddress,
+      },
       accessToken,
       refreshToken,
     });

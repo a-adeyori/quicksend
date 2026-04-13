@@ -1,9 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { db } from '../config/database';
+import { config } from '../config/env';
 import { AppError } from '../middleware/errorHandler';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { rafikiService, formatCurrency, dollarsToUnits } from '../services/rafikiService';
+import { rafikiAdminService } from '../services/rafikiAdminService';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -15,6 +17,10 @@ const connectSchema = z.object({
 
 const depositSchema = z.object({
   amountDollars: z.number().positive().min(1),
+});
+
+const createWalletSchema = z.object({
+  publicName: z.string().min(2).max(80).optional(),
 });
 
 // ─── POST /wallet/connect ─────────────────────────────────────────────────────
@@ -59,6 +65,68 @@ router.post('/connect', async (req: Request, res: Response, next: NextFunction) 
       },
     });
   } catch (err) { next(err); }
+});
+
+// ─── POST /wallet/create-address ──────────────────────────────────────────────
+// Create a tenant-scoped Rafiki wallet address for the signed-in user.
+router.post('/create-address', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const userId = (req as AuthRequest).user.id;
+    const { publicName } = createWalletSchema.parse(req.body ?? {});
+
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true, walletAddress: true },
+    });
+    if (!user) throw AppError.notFound('User');
+    if (user.walletAddress) {
+      return res.status(409).json({
+        error: 'User already has a wallet address',
+        walletAddress: user.walletAddress,
+      });
+    }
+
+    if (!config.rafikiWalletAssetId) {
+      throw AppError.badRequest(
+        'RAFIKI_WALLET_ASSET_ID is required to create wallet addresses',
+        'RAFIKI_WALLET_ASSET_ID_MISSING'
+      );
+    }
+
+    const created = await rafikiAdminService.createWalletAddress({
+      publicName: publicName?.trim() || `${user.firstName} ${user.lastName}`.trim(),
+      assetId: config.rafikiWalletAssetId,
+    });
+
+    await db.user.update({
+      where: { id: userId },
+      data: {
+        walletAddress: created.url,
+        ilpAccountId: created.id,
+        assetCode: created.asset?.code ?? 'USD',
+        assetScale: created.asset?.scale ?? 2,
+      },
+    });
+
+    logger.info('Wallet address created for user', {
+      userId,
+      walletAddress: created.url,
+      walletAddressId: created.id,
+    });
+
+    res.status(201).json({
+      message: 'Wallet address created',
+      wallet: {
+        id: created.id,
+        address: created.url,
+        publicName: created.publicName,
+        assetCode: created.asset?.code ?? 'USD',
+        assetScale: created.asset?.scale ?? 2,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ─── DELETE /wallet/disconnect ────────────────────────────────────────────────

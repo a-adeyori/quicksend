@@ -17,6 +17,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import { useWallet } from '../context/WalletContext';
 import { useAuth } from '../context/AuthContext';
 import { RAFIKI_CONFIG } from '../services/rafikiService';
+import { walletService } from '../services/walletService';
 import { colors, spacing, radius, typography, shadows, textInputWeb } from '../utils/theme';
 
 export default function SettingsScreen() {
@@ -27,6 +28,7 @@ export default function SettingsScreen() {
   const [walletInput, setWalletInput] = useState(walletAddress);
   const [tokenInput, setTokenInput] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isCreatingWalletAddress, setIsCreatingWalletAddress] = useState(false);
   const [showTokenInput, setShowTokenInput] = useState(false);
 
   const handleConnect = async () => {
@@ -48,6 +50,24 @@ export default function SettingsScreen() {
     setTokenInput('');
     setShowTokenInput(false);
     Alert.alert('Token Saved', 'Your ILP access token has been securely saved.');
+  };
+
+  const handleCreateWalletAddress = async () => {
+    try {
+      setIsCreatingWalletAddress(true);
+      const created = await walletService.createAddress();
+      setWalletInput(created.wallet.address);
+      await connectWallet(created.wallet.address);
+      Alert.alert('Wallet Created', `New wallet address: ${created.wallet.address}`);
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === 'object' && 'message' in err
+          ? String((err as { message: string }).message)
+          : 'Could not create a Rafiki wallet address.';
+      Alert.alert('Wallet Creation Failed', msg);
+    } finally {
+      setIsCreatingWalletAddress(false);
+    }
   };
 
   const handleBiometricTest = async () => {
@@ -169,6 +189,22 @@ export default function SettingsScreen() {
                 </>
               )}
             </LinearGradient>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.createWalletBtn}
+            onPress={() => void handleCreateWalletAddress()}
+            disabled={isCreatingWalletAddress}
+            activeOpacity={0.85}
+          >
+            {isCreatingWalletAddress ? (
+              <ActivityIndicator color={colors.primary} size="small" />
+            ) : (
+              <>
+                <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
+                <Text style={styles.createWalletBtnText}>Create Rafiki Wallet Address</Text>
+              </>
+            )}
           </TouchableOpacity>
 
           {/* Access Token */}
@@ -308,6 +344,20 @@ const styles = StyleSheet.create({
   connectBtn: { marginHorizontal: spacing.lg, marginBottom: spacing.lg, borderRadius: radius.lg, overflow: 'hidden' },
   connectBtnGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, gap: 8 },
   connectBtnText: { fontSize: typography.base, fontWeight: typography.bold, color: '#fff' },
+  createWalletBtn: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    backgroundColor: '#f0fdf4',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 12,
+  },
+  createWalletBtnText: { fontSize: typography.sm, fontWeight: typography.semibold, color: colors.primary },
 
   divider: { height: 1, backgroundColor: colors.divider, marginHorizontal: spacing.lg },
 

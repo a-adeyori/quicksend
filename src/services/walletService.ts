@@ -27,6 +27,14 @@ export const walletService = {
     return data;
   },
 
+  async createAddress(publicName?: string): Promise<{
+    message: string;
+    wallet: { id: string; address: string; publicName?: string; assetCode: string; assetScale: number };
+  }> {
+    const { data } = await api.post('/wallet/create-address', { publicName });
+    return data;
+  },
+
   async disconnect(): Promise<void> {
     await api.delete('/wallet/disconnect');
   },

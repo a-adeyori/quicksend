@@ -29,8 +29,10 @@ const quoteSchema = z.object({
 });
 
 const sendSchema = z.object({
-  recipientWalletAddress: z.string().url(),
-  recipientName: z.string().min(1).max(100),
+  recipientWalletAddress: z.string().url().optional(),
+  recipientUserId: z.string().uuid().optional(),
+  recipientEmail: z.string().email().optional(),
+  recipientName: z.string().min(1).max(100).optional(),
   amountDollars: z.number().positive().min(1).max(10_000),
   note: z.string().max(200).optional(),
   quoteId: z.string().uuid().optional(), // optional: reuse a recent quote
@@ -244,12 +246,56 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
       throw AppError.badRequest('Insufficient balance', 'INSUFFICIENT_FUNDS');
     }
 
+    // Resolve recipient from app user lookup (preferred) or wallet address.
+    let recipientUser: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      walletAddress: string | null;
+    } | null = null;
+
+    if (body.recipientUserId) {
+      recipientUser = await db.user.findUnique({
+        where: { id: body.recipientUserId },
+        select: { id: true, firstName: true, lastName: true, email: true, walletAddress: true },
+      });
+    } else if (body.recipientEmail) {
+      recipientUser = await db.user.findUnique({
+        where: { email: body.recipientEmail.toLowerCase() },
+        select: { id: true, firstName: true, lastName: true, email: true, walletAddress: true },
+      });
+    } else if (body.recipientWalletAddress) {
+      recipientUser = await db.user.findUnique({
+        where: { walletAddress: body.recipientWalletAddress },
+        select: { id: true, firstName: true, lastName: true, email: true, walletAddress: true },
+      });
+    }
+
+    if (recipientUser && recipientUser.id === userId) {
+      throw AppError.badRequest('You cannot send money to yourself', 'SELF_TRANSFER_NOT_ALLOWED');
+    }
+
+    const recipientWalletAddress = recipientUser?.walletAddress ?? body.recipientWalletAddress;
+    if (!recipientWalletAddress) {
+      throw AppError.badRequest(
+        'Recipient wallet address is required. Provide recipientUserId/recipientEmail for internal users, or recipientWalletAddress for external users.',
+        'RECIPIENT_REQUIRED'
+      );
+    }
+
+    const recipientName = body.recipientName
+      || (recipientUser ? `${recipientUser.firstName} ${recipientUser.lastName}`.trim() : undefined)
+      || recipientUser?.email
+      || 'Recipient';
+
     // Create payment record (PENDING)
     const payment = await db.payment.create({
       data: {
         senderId: userId,
-        recipientWalletAddress: body.recipientWalletAddress,
-        recipientName: body.recipientName,
+        receiverId: recipientUser?.id,
+        recipientWalletAddress,
+        recipientName,
         debitAmountCents: debitCents,
         receiveAmountCents: debitCents, // updated after quote
         assetCode: sender.assetCode,
@@ -270,11 +316,11 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
       try {
         const { payment: ilpPayment, quote } = await rafikiService.executeSendMoney({
           senderWalletAddress: sender.walletAddress,
-          recipientWalletAddress: body.recipientWalletAddress,
+          recipientWalletAddress,
           amountDollars: body.amountDollars,
           metadata: {
             quicksendPaymentId: payment.id,
-            recipientName: body.recipientName,
+            recipientName,
             note: body.note ?? '',
           },
         });
@@ -306,10 +352,22 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
             userId,
             type: 'PAYMENT_SENT',
             title: 'Payment Sent ✓',
-            body: `$${body.amountDollars.toFixed(2)} sent to ${body.recipientName}`,
+            body: `$${body.amountDollars.toFixed(2)} sent to ${recipientName}`,
             data: { paymentId: payment.id },
           },
         });
+
+        if (recipientUser?.id) {
+          await db.notification.create({
+            data: {
+              userId: recipientUser.id,
+              type: 'PAYMENT_RECEIVED',
+              title: 'Money Received 💰',
+              body: `${sender.walletAddress ? 'ILP' : 'App'} transfer from QuickSend user`,
+              data: { paymentId: payment.id, senderId: userId },
+            },
+          });
+        }
 
         await db.auditLog.create({
           data: {

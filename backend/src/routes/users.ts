@@ -19,6 +19,10 @@ const updateProfileSchema = z.object({
   phone: z.string().optional(),
 });
 
+const searchSchema = z.object({
+  query: z.string().min(2).max(120),
+});
+
 // GET /users/profile
 usersRouter.get('/profile', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -51,6 +55,51 @@ usersRouter.patch('/profile', async (req: Request, res: Response, next: NextFunc
     });
     res.json(user);
   } catch (err) { next(err); }
+});
+
+// GET /users/search?query=...
+// Search app users by name/email for in-app transfers.
+usersRouter.get('/search', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authUserId = (req as AuthRequest).user.id;
+    const { query } = searchSchema.parse({ query: String(req.query.query ?? '') });
+
+    const rows = await db.user.findMany({
+      where: {
+        id: { not: authUserId },
+        OR: [
+          { email: { contains: query, mode: 'insensitive' } },
+          { firstName: { contains: query, mode: 'insensitive' } },
+          { lastName: { contains: query, mode: 'insensitive' } },
+        ],
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        walletAddress: true,
+        assetCode: true,
+        assetScale: true,
+      },
+      take: 20,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json({
+      users: rows.map((u) => ({
+        id: u.id,
+        email: u.email,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        walletAddress: u.walletAddress,
+        assetCode: u.assetCode,
+        assetScale: u.assetScale,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // GET /users/balance

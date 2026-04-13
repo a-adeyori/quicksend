@@ -21,6 +21,10 @@ const envSchema = z
     QUICKSEND_PLATFORM_WALLET_ADDRESS: z.string().url(),
     RAFIKI_SERVICE_TOKEN: z.string().default(''),
     RAFIKI_WEBHOOK_SECRET: z.string().min(8),
+    RAFIKI_ADMIN_API_URL: z.string().url().optional(),
+    RAFIKI_TENANT_ID: z.string().optional(),
+    RAFIKI_TENANT_API_SECRET: z.string().optional(),
+    RAFIKI_WALLET_ASSET_ID: z.string().optional(),
 
     BCRYPT_ROUNDS: z.coerce.number().default(12),
     RATE_LIMIT_WINDOW_MS: z.coerce.number().default(900_000),
@@ -90,6 +94,10 @@ export const config = {
   platformWalletAddress: env.QUICKSEND_PLATFORM_WALLET_ADDRESS,
   rafikiServiceToken: env.RAFIKI_SERVICE_TOKEN,
   rafikiWebhookSecret: env.RAFIKI_WEBHOOK_SECRET,
+  rafikiAdminApiUrl: env.RAFIKI_ADMIN_API_URL ?? '',
+  rafikiTenantId: env.RAFIKI_TENANT_ID ?? '',
+  rafikiTenantApiSecret: env.RAFIKI_TENANT_API_SECRET ?? '',
+  rafikiWalletAssetId: env.RAFIKI_WALLET_ASSET_ID ?? '',
 
   bcryptRounds: env.BCRYPT_ROUNDS,
   rateLimitWindowMs: env.RATE_LIMIT_WINDOW_MS,

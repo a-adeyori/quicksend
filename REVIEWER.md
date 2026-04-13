@@ -54,6 +54,15 @@ Free/low-friction hosts people use: **Railway**, **Render**, **Fly.io**.
 
 Then **Casey** can use the seeded account in **§3**.
 
+If you want auto wallet creation in Rafiki (instead of manual copy/paste wallet URLs), also set:
+
+- `RAFIKI_ADMIN_API_URL` (tenant GraphQL admin endpoint)
+- `RAFIKI_TENANT_ID`
+- `RAFIKI_TENANT_API_SECRET`
+- `RAFIKI_WALLET_ASSET_ID`
+
+Then the app can call **`POST /wallet/create-address`** and create a user wallet address on sign-up / settings.
+
 ---
 
 ## 1. Live app **with** a deployed API (full testing)
