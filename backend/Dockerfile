@@ -40,4 +40,4 @@ EXPOSE 3001
 
 # dumb-init handles signal forwarding so graceful shutdown works
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node dist/index.js"]
