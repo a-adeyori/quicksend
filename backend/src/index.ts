@@ -1,3 +1,15 @@
+console.log('>> PROCESS STARTING');
+
+process.on('uncaughtException', (err) => {
+  console.error('CRASH:', err.message, err.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason);
+  process.exit(1);
+});
+
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -10,26 +22,16 @@ import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestId } from './middleware/requestId';
 
-// Routes
-import authRoutes from './routes/auth';
-import userRoutes from './routes/users';
-import paymentRoutes from './routes/payments';
-import contactRoutes from './routes/contacts';
-import walletRoutes from './routes/wallet';
-import webhookRoutes from './routes/webhooks';
-import adminRoutes from './routes/admin';
+console.log('>> core imports done');
 
-// ─── Catch silent crashes ──────────────────────────────────────────────────────
-process.on('uncaughtException', (err) => {
-  console.error('UNCAUGHT EXCEPTION:', err.message);
-  console.error(err.stack);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
-  console.error('UNHANDLED REJECTION:', reason);
-  process.exit(1);
-});
+// Routes — commented out to isolate crash
+// import authRoutes from './routes/auth';
+// import userRoutes from './routes/users';
+// import paymentRoutes from './routes/payments';
+// import contactRoutes from './routes/contacts';
+// import walletRoutes from './routes/wallet';
+// import webhookRoutes from './routes/webhooks';
+// import adminRoutes from './routes/admin';
 
 console.log('>> index.ts loaded, building express app...');
 
@@ -81,13 +83,13 @@ const API = `/api/${config.apiVersion}`;
 
 console.log(`>> Registering routes under ${API}`);
 
-app.use(`${API}/auth`,      authRoutes);
-app.use(`${API}/users`,     userRoutes);
-app.use(`${API}/payments`,  paymentRoutes);
-app.use(`${API}/contacts`,  contactRoutes);
-app.use(`${API}/wallet`,    walletRoutes);
-app.use(`${API}/webhooks`,  webhookRoutes);
-app.use(`${API}/admin`,     adminRoutes);
+// app.use(`${API}/auth`,      authRoutes);
+// app.use(`${API}/users`,     userRoutes);
+// app.use(`${API}/payments`,  paymentRoutes);
+// app.use(`${API}/contacts`,  contactRoutes);
+// app.use(`${API}/wallet`,    walletRoutes);
+// app.use(`${API}/webhooks`,  webhookRoutes);
+// app.use(`${API}/admin`,     adminRoutes);
 
 // ─── 404 ───────────────────────────────────────────────────────────────────────
 app.use((_req, res) => {
@@ -108,6 +110,5 @@ app.listen(PORT, () => {
   logger.info(`📡 ILP Resource Server: ${config.rafikiResourceServerUrl}`);
   logger.info(`🔑 Auth Server:         ${config.rafikiAuthServerUrl}`);
 });
-
 
 export default app;
