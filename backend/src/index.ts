@@ -99,17 +99,15 @@ app.use(errorHandler);
 
 // ─── Start server ──────────────────────────────────────────────────────────────
 const PORT = config.port;
-const isPrimaryModule = require.main === module;
 
-console.log(`>> isPrimaryModule: ${isPrimaryModule}, PORT: ${PORT}`);
+console.log(`>> Starting server on PORT: ${PORT}`);
 
-if (isPrimaryModule) {
-  app.listen(PORT, () => {
-    console.log(`>> SERVER STARTED ON PORT ${PORT}`);
-    logger.info(`🚀 QuickSend API running on port ${PORT} [${config.nodeEnv}]`);
-    logger.info(`📡 ILP Resource Server: ${config.rafikiResourceServerUrl}`);
-    logger.info(`🔑 Auth Server:         ${config.rafikiAuthServerUrl}`);
-  });
-}
+app.listen(PORT, () => {
+  console.log(`>> SERVER STARTED ON PORT ${PORT}`);
+  logger.info(`🚀 QuickSend API running on port ${PORT} [${config.nodeEnv}]`);
+  logger.info(`📡 ILP Resource Server: ${config.rafikiResourceServerUrl}`);
+  logger.info(`🔑 Auth Server:         ${config.rafikiAuthServerUrl}`);
+});
+
 
 export default app;
