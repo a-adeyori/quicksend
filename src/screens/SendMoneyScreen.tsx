@@ -158,13 +158,12 @@ export default function SendMoneyScreen() {
     setStep('sending');
 
     const result = await sendMoney({
-      recipientWalletAddress: recipient.walletAddress ?? '',
+      ...(recipient.username ? { recipientUsername: recipient.username } : {}),
+      ...(recipient.walletAddress ? { recipientWalletAddress: recipient.walletAddress } : {}),
       recipientName: recipient.name,
       amountDollars: parseFloat(amount),
       note: note || undefined,
-      // Pass username so backend can resolve internally
-      ...(recipient.username ? { recipientUsername: recipient.username } : {}),
-    } as any);
+    });
 
     if (result.success) {
       setPaymentId(result.paymentId ?? null);
