@@ -37,8 +37,6 @@ export const rafikiAdminService = {
     const query = `
 mutation CreateWalletAddress($input: CreateWalletAddressInput!) {
   createWalletAddress(input: $input) {
-    success
-    message
     walletAddress {
       id
       publicName
@@ -80,8 +78,6 @@ mutation CreateWalletAddress($input: CreateWalletAddressInput!) {
 
     const json = (await res.json()) as GraphQlResponse<{
       createWalletAddress?: {
-        success: boolean;
-        message?: string;
         walletAddress?: CreateWalletAddressResult;
       };
     }>;
@@ -91,11 +87,10 @@ mutation CreateWalletAddress($input: CreateWalletAddressInput!) {
     }
 
     const payload = json.data?.createWalletAddress;
-    if (!payload?.success || !payload.walletAddress?.url) {
-      throw AppError.ilpError(payload?.message ?? 'Failed to create wallet address in Rafiki');
+    if (!payload?.walletAddress?.url) {
+      throw AppError.ilpError('Failed to create wallet address in Rafiki');
     }
 
     return payload.walletAddress;
   },
 };
-
