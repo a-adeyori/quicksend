@@ -2,10 +2,10 @@ fetch('https://quicksend-production.up.railway.app/api/v1/auth/register', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
-      email: 'yori@test.com',
+      email: 'yori2@test.com',
       password: 'testpassword123',
-      firstName: 'Adeyori',
-      lastName: 'Adekunle'
+      firstName: 'Yori',
+      lastName: 'Adeyori'
     })
   }).then(r => {
     console.log('Status:', r.status);
