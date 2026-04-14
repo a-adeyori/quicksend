@@ -417,8 +417,14 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
     ]);
 
     res.status(201).json({
-      payment: { ...payment, status: 'COMPLETED', debitAmountCents: Number(debitCents) },
-      message: 'Payment completed (demo mode — no ILP wallet connected)',
+      payment: {
+        ...payment,
+        status: 'COMPLETED',
+        debitAmountCents: Number(debitCents),
+        receiveAmountCents: Number(payment.receiveAmountCents),
+        feeAmountCents: Number(payment.feeAmountCents),
+      },
+      message: 'Payment sent successfully',
     });
   } catch (err) {
     next(err);
