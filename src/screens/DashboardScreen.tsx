@@ -100,31 +100,34 @@ export default function DashboardScreen() {
       >
         {/* Top row */}
         <View style={styles.headerTop}>
-          <View style={styles.logoRow}>
-            <View style={styles.logoCircle}>
-              <Ionicons name="flash" size={18} color={colors.primary} />
+          <View style={styles.userRow}>
+            {/* Avatar with initials */}
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {user?.firstName?.[0]?.toUpperCase() ?? '?'}
+              </Text>
             </View>
-            <Text style={styles.logoText}>QuickSend</Text>
+            <View style={styles.userInfo}>
+              <Text style={styles.greeting}>
+                {user?.firstName ? `Hi, ${user.firstName} 👋` : 'Welcome back'}
+              </Text>
+              {(user as any)?.username ? (
+                <View style={styles.usernameChip}>
+                  <Text style={styles.usernameAt}>@</Text>
+                  <Text style={styles.usernameText}>{(user as any).username}</Text>
+                </View>
+              ) : null}
+            </View>
           </View>
-          <View style={styles.headerActions}>
-            {isConnected && (
-              <View style={styles.connectedBadge}>
-                <View style={styles.connectedDot} />
-                <Text style={styles.connectedText}>ILP Live</Text>
-              </View>
-            )}
-            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
-              <Ionicons name="log-out-outline" size={16} color="rgba(255,255,255,0.9)" />
-              <Text style={styles.logoutBtnText}>Logout</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
+            <Ionicons name="log-out-outline" size={16} color="rgba(255,255,255,0.9)" />
+            <Text style={styles.logoutBtnText}>Logout</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Balance */}
         <View style={styles.balanceSection}>
-          <Text style={styles.balanceLabel}>
-            {user?.firstName ? `Hi, ${user.firstName} 👋` : 'Total Balance'}
-          </Text>
+          <Text style={styles.balanceLabel}>Total Balance</Text>
           <Text style={styles.balanceAmount}>{balance?.formatted ?? '$0.00'}</Text>
           <Text style={styles.walletNote}>
             {isConnected
@@ -241,10 +244,14 @@ const styles = StyleSheet.create({
   // Header
   header: { paddingTop: 56, paddingHorizontal: spacing.xl, paddingBottom: spacing.xl },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xxl },
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logoCircle: { width: 32, height: 32, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'center', justifyContent: 'center' },
-  logoText: { fontSize: typography.md, fontWeight: typography.bold, color: '#fff' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  userRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  avatar: { width: 44, height: 44, borderRadius: radius.full, backgroundColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255,255,255,0.4)' },
+  avatarText: { fontSize: typography.lg, fontWeight: typography.bold, color: '#fff' },
+  userInfo: { gap: 3 },
+  greeting: { fontSize: typography.base, fontWeight: typography.bold, color: '#fff' },
+  usernameChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 2, alignSelf: 'flex-start' },
+  usernameAt: { fontSize: typography.xs, color: 'rgba(255,255,255,0.6)', fontWeight: typography.bold },
+  usernameText: { fontSize: typography.xs, color: 'rgba(255,255,255,0.9)', fontWeight: typography.semibold },
   connectedBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.full, paddingHorizontal: 10, paddingVertical: 4 },
   connectedDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#86efac' },
   connectedText: { fontSize: typography.xs, fontWeight: typography.semibold, color: '#d1fae5' },
