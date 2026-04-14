@@ -80,6 +80,10 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
         email: body.email,
         phone: body.phone,
         passwordHash,
+        kycStatus: 'APPROVED',
+        balanceCents: 10000n, // $100.00 starting balance for beta
+        assetCode: 'USD',
+        assetScale: 2,
       },
       select: { id: true, email: true, firstName: true, lastName: true, role: true },
     });
