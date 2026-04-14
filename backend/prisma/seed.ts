@@ -6,6 +6,7 @@
  *
  * Reviewer login (sandbox — no real money):
  *   Email:    demo@quicksend.app
+ *   Username: demo
  *   Password: password123
  */
 import { PrismaClient } from '@prisma/client';
@@ -14,6 +15,7 @@ import bcrypt from 'bcryptjs';
 const db = new PrismaClient();
 
 const REVIEWER_EMAIL = 'demo@quicksend.app';
+const REVIEWER_USERNAME = 'demo';
 const REVIEWER_PASSWORD = 'password123';
 
 async function main() {
@@ -26,6 +28,7 @@ async function main() {
     where: { email: REVIEWER_EMAIL },
     update: {
       passwordHash,
+      username: REVIEWER_USERNAME,
       firstName: 'Demo',
       lastName: 'Reviewer',
       kycStatus: 'APPROVED',
@@ -38,6 +41,7 @@ async function main() {
     },
     create: {
       email: REVIEWER_EMAIL,
+      username: REVIEWER_USERNAME,
       firstName: 'Demo',
       lastName: 'Reviewer',
       passwordHash,
@@ -50,8 +54,7 @@ async function main() {
     },
   });
 
-  console.log(`✅ Pre-verified demo user: ${user.email} (id: ${user.id})`);
-  console.log('   KYC: APPROVED — ready to send (with ILP wallet connected on testnet)');
+  console.log(`✅ Demo user: ${user.email} / @${user.username} (id: ${user.id})`);
 
   const contacts = [
     { name: 'Sarah (Daughter)', initials: 'SD', color: '#D1FAE5', walletAddress: 'https://ilp.interledger-test.dev/sarah' },
@@ -108,19 +111,15 @@ async function main() {
       });
     }
     console.log(`✅ Seeded ${txs.length} sample payments`);
-  } else {
-    console.log(`⏭️  Skipping payments seed (${existingTx} already exist)`);
   }
 
-  console.log('\n── Reviewer login (sandbox) ─────────────────────────');
+  console.log('\n── Reviewer login ───────────────────────────────────');
   console.log(`   Email:    ${REVIEWER_EMAIL}`);
+  console.log(`   Username: @${REVIEWER_USERNAME}`);
   console.log(`   Password: ${REVIEWER_PASSWORD}`);
   console.log('────────────────────────────────────────────────────');
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
+  .catch((e) => { console.error(e); process.exit(1); })
   .finally(() => db.$disconnect());

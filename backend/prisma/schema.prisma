@@ -1,6 +1,4 @@
 // QuickSend Database Schema
-// Run: npx prisma migrate dev --name init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,17 +11,18 @@ datasource db {
 // ─── User ─────────────────────────────────────────────────────────────────────
 
 model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
-  phone         String?   @unique
-  firstName     String
-  lastName      String
-  passwordHash  String
-  role          UserRole  @default(USER)
+  id           String    @id @default(uuid())
+  email        String    @unique
+  username     String    @unique  // e.g. "yori" — used for login + search + wallet URL
+  phone        String?   @unique
+  firstName    String
+  lastName     String
+  passwordHash String
+  role         UserRole  @default(USER)
 
   // ILP wallet info
-  walletAddress String?   @unique  // their Open Payments wallet URL (external wallet)
-  ilpAccountId  String?   @unique  // internal Rafiki account ID (if hosted on your Rafiki)
+  walletAddress String?  @unique
+  ilpAccountId  String?  @unique
 
   // App state
   isVerified    Boolean   @default(false)
@@ -31,24 +30,24 @@ model User {
   kycStatus     KYCStatus @default(PENDING)
   kycVerifiedAt DateTime?
 
-  // Balance mirror (kept in sync with Rafiki via webhooks)
-  // Stored in the smallest asset unit (cents for USD, i.e. scale=2)
-  balanceCents  BigInt    @default(0)
-  assetCode     String    @default("USD")
-  assetScale    Int       @default(2)
+  // Balance
+  balanceCents BigInt @default(0)
+  assetCode    String @default("USD")
+  assetScale   Int    @default(2)
 
   // Relations
-  outgoingPayments  Payment[]       @relation("SenderPayments")
-  incomingPayments  Payment[]       @relation("ReceiverPayments")
-  contacts          Contact[]
-  refreshTokens     RefreshToken[]
-  auditLogs         AuditLog[]
-  notifications     Notification[]
+  outgoingPayments Payment[]      @relation("SenderPayments")
+  incomingPayments Payment[]      @relation("ReceiverPayments")
+  contacts         Contact[]
+  refreshTokens    RefreshToken[]
+  auditLogs        AuditLog[]
+  notifications    Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([email])
+  @@index([username])
   @@index([walletAddress])
 }
 
@@ -71,11 +70,10 @@ model Contact {
   id            String  @id @default(uuid())
   userId        String
   user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   name          String
   initials      String
   color         String  @default("#D1FAE5")
-  walletAddress String  // Open Payments URL of the contact
+  walletAddress String
   phone         String?
   email         String?
   notes         String?
@@ -90,43 +88,35 @@ model Contact {
 // ─── Payment ──────────────────────────────────────────────────────────────────
 
 model Payment {
-  id          String        @id @default(uuid())
+  id         String  @id @default(uuid())
+  senderId   String
+  sender     User    @relation("SenderPayments", fields: [senderId], references: [id])
+  receiverId String?
+  receiver   User?   @relation("ReceiverPayments", fields: [receiverId], references: [id])
 
-  // Parties
-  senderId    String
-  sender      User          @relation("SenderPayments", fields: [senderId], references: [id])
-  receiverId  String?
-  receiver    User?         @relation("ReceiverPayments", fields: [receiverId], references: [id])
-
-  // Recipient info (for external wallets where receiverId is null)
   recipientWalletAddress String
   recipientName          String
 
-  // Amounts (in smallest unit, e.g. cents)
-  debitAmountCents       BigInt
-  receiveAmountCents     BigInt
-  feeAmountCents         BigInt  @default(0)
-  assetCode              String  @default("USD")
-  assetScale             Int     @default(2)
+  debitAmountCents   BigInt
+  receiveAmountCents BigInt
+  feeAmountCents     BigInt @default(0)
+  assetCode          String @default("USD")
+  assetScale         Int    @default(2)
 
-  // ILP references
-  ilpQuoteId             String?  @unique
-  ilpOutgoingPaymentId   String?  @unique
-  ilpIncomingPaymentId   String?
+  ilpQuoteId           String? @unique
+  ilpOutgoingPaymentId String? @unique
+  ilpIncomingPaymentId String?
 
-  // State machine
-  status      PaymentStatus @default(PENDING)
-  failReason  String?
+  status     PaymentStatus @default(PENDING)
+  failReason String?
 
-  // Metadata
-  note        String?
-  reference   String?  @unique @default(cuid())
+  note      String?
+  reference String? @unique @default(cuid())
 
-  // Timestamps
-  initiatedAt    DateTime  @default(now())
-  processedAt    DateTime?
-  completedAt    DateTime?
-  failedAt       DateTime?
+  initiatedAt DateTime  @default(now())
+  processedAt DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -134,28 +124,27 @@ model Payment {
   @@index([senderId])
   @@index([receiverId])
   @@index([status])
-  @@index([ilpOutgoingPaymentId])
   @@index([createdAt])
 }
 
 enum PaymentStatus {
-  PENDING      // Created, not yet submitted to ILP
-  QUOTING      // Fetching ILP quote
-  QUOTED       // Quote obtained, awaiting user confirmation
-  PROCESSING   // Submitted to ILP, awaiting completion
-  COMPLETED    // ILP payment completed
-  FAILED       // ILP payment failed
-  CANCELLED    // Cancelled by user before processing
-  REVERSED     // Successfully reversed/refunded
+  PENDING
+  QUOTING
+  QUOTED
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REVERSED
 }
 
 // ─── Refresh Tokens ───────────────────────────────────────────────────────────
 
 model RefreshToken {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String    @unique
   expiresAt DateTime
   revokedAt DateTime?
   userAgent String?
@@ -170,15 +159,15 @@ model RefreshToken {
 // ─── Audit Log ────────────────────────────────────────────────────────────────
 
 model AuditLog {
-  id        String  @id @default(uuid())
-  userId    String?
-  user      User?   @relation(fields: [userId], references: [id])
-  action    String
-  resource  String
+  id         String  @id @default(uuid())
+  userId     String?
+  user       User?   @relation(fields: [userId], references: [id])
+  action     String
+  resource   String
   resourceId String?
-  metadata  Json?
-  ipAddress String?
-  userAgent String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
 
   createdAt DateTime @default(now())
 
@@ -217,13 +206,13 @@ enum NotificationType {
 // ─── ILP Webhook Events ───────────────────────────────────────────────────────
 
 model WebhookEvent {
-  id          String              @id @default(uuid())
+  id          String             @id @default(uuid())
   eventType   String
   payload     Json
-  status      WebhookEventStatus  @default(PENDING)
+  status      WebhookEventStatus @default(PENDING)
   processedAt DateTime?
   error       String?
-  retries     Int                 @default(0)
+  retries     Int                @default(0)
 
   createdAt DateTime @default(now())
 
