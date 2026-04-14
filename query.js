@@ -1,4 +1,4 @@
-fetch('https://rafiki-backend-production-8629.up.railway.app/graphql', {
+fetch('http://turntable.proxy.rlwy.net:42328/graphql', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
