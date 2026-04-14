@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Alert,
   Keyboard,
+  FlatList,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,24 +20,45 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
 import { colors, spacing, radius, typography, shadows, textInputWeb } from '../utils/theme';
+import { api } from '../services/apiClient';
 import type { QuoteResult } from '../services/paymentsService';
 
-interface Contact {
+interface SearchUser {
   id: string;
+  username: string;
   name: string;
   initials: string;
-  color: string;
-  walletAddress: string;
+  walletAddress: string | null;
+  assetCode: string;
+}
+
+interface SelectedRecipient {
+  id: string;
+  username: string;
+  name: string;
+  initials: string;
+  walletAddress: string | null;
 }
 
 const QUICK_AMOUNTS = ['10', '25', '50', '100'];
+const AVATAR_COLORS = ['#D1FAE5', '#E0F2FE', '#FEF3C7', '#EDE9FE', '#FFE4E6', '#D1E8FF'];
+
+function colorForUsername(username: string): string {
+  let hash = 0;
+  for (const c of username) hash = c.charCodeAt(0) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
 
 export default function SendMoneyScreen() {
   const router = useRouter();
-  const { contacts, sendMoney, getQuote, isLoading } = useWallet();
+  const { sendMoney, getQuote } = useWallet();
 
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [manualRecipient, setManualRecipient] = useState('');
+  const [recipient, setRecipient] = useState<SelectedRecipient | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [step, setStep] = useState<'form' | 'review' | 'sending' | 'success'>('form');
@@ -45,76 +67,113 @@ export default function SendMoneyScreen() {
   const [paymentId, setPaymentId] = useState<string | null>(null);
 
   const reviewAnim = useRef(new Animated.Value(0)).current;
-  /** Icon-only scale; avoid animating full-screen opacity so “sent” message is visible immediately. */
   const successIconScale = useRef(new Animated.Value(0)).current;
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (step !== 'success') return;
     successIconScale.setValue(0);
     Animated.spring(successIconScale, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 60,
-      friction: 10,
+      toValue: 1, useNativeDriver: true, tension: 60, friction: 10,
     }).start();
   }, [step]);
 
-  const recipient = selectedContact?.name ?? manualRecipient;
-  const recipientWallet = selectedContact?.walletAddress ?? `https://wallet.example.com/${manualRecipient.toLowerCase().replace(/\s+/g, '-')}`;
-  const canReview = recipient.trim().length > 0 && parseFloat(amount) >= 1;
+  // ── Live search ────────────────────────────────────────────────────────────
+  const searchUsers = useCallback(async (q: string) => {
+    if (q.length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      const res = await api.get(`/users/search?q=${encodeURIComponent(q)}`);
+      const users: SearchUser[] = (res.data.users ?? []).map((u: SearchUser) => ({
+        ...u,
+        initials: u.name
+          ? u.name.split(' ').map((p: string) => p[0]).join('').toUpperCase().slice(0, 2)
+          : u.username.slice(0, 2).toUpperCase(),
+      }));
+      setSearchResults(users);
+      setShowDropdown(users.length > 0);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
+
+  const handleSearchChange = (text: string) => {
+    // Strip leading @ for convenience
+    const q = text.startsWith('@') ? text.slice(1) : text;
+    setSearchQuery(text);
+    setRecipient(null);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => searchUsers(q), 300);
+  };
+
+  const selectUser = (user: SearchUser) => {
+    if (Platform.OS !== 'web') void Haptics.selectionAsync();
+    setRecipient({
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      initials: user.initials,
+      walletAddress: user.walletAddress,
+    });
+    setSearchQuery(`@${user.username}`);
+    setSearchResults([]);
+    setShowDropdown(false);
+    Keyboard.dismiss();
+  };
+
+  const clearRecipient = () => {
+    setRecipient(null);
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowDropdown(false);
+  };
+
+  // ── Review / send ──────────────────────────────────────────────────────────
+  const canReview = !!recipient && parseFloat(amount) >= 1;
 
   const openReview = async () => {
     Keyboard.dismiss();
     setLoadingQuote(true);
-    const q = await getQuote(recipientWallet, parseFloat(amount));
+    const q = await getQuote(recipient?.walletAddress ?? '', parseFloat(amount));
     setQuote(q ?? null);
     setLoadingQuote(false);
     setStep('review');
-    Animated.spring(reviewAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 65,
-      friction: 11,
-    }).start();
+    Animated.spring(reviewAnim, { toValue: 1, useNativeDriver: true, tension: 65, friction: 11 }).start();
   };
 
   const closeReview = () => {
-    Animated.timing(reviewAnim, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => setStep('form'));
+    Animated.timing(reviewAnim, { toValue: 0, duration: 200, useNativeDriver: true })
+      .start(() => setStep('form'));
   };
 
   const confirmSend = async () => {
-    if (Platform.OS !== 'web') {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    if (!recipient) return;
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setStep('sending');
 
     const result = await sendMoney({
-      recipientWalletAddress: recipientWallet,
-      recipientName: recipient,
+      recipientWalletAddress: recipient.walletAddress ?? '',
+      recipientName: recipient.name,
       amountDollars: parseFloat(amount),
       note: note || undefined,
-    });
+      // Pass username so backend can resolve internally
+      ...(recipient.username ? { recipientUsername: recipient.username } : {}),
+    } as any);
 
     if (result.success) {
       setPaymentId(result.paymentId ?? null);
       setStep('success');
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
+      if (Platform.OS !== 'web') void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else {
       setStep('review');
       Alert.alert('Payment Failed', result.error ?? 'Something went wrong. Please try again.');
     }
-  };
-
-  const handleContactSelect = (contact: Contact) => {
-    if (Platform.OS !== 'web') void Haptics.selectionAsync();
-    setSelectedContact(selectedContact?.id === contact.id ? null : contact);
-    if (selectedContact?.id !== contact.id) setManualRecipient('');
   };
 
   const handleQuickAmount = (a: string) => {
@@ -122,38 +181,37 @@ export default function SendMoneyScreen() {
     setAmount(a);
   };
 
-  // ── Success view ───────────────────────────────────────────────────────────
+  const resetForm = () => {
+    setStep('form');
+    setAmount('');
+    setNote('');
+    clearRecipient();
+    setQuote(null);
+  };
 
+  // ── Success view ───────────────────────────────────────────────────────────
   if (step === 'success') {
     return (
       <View style={styles.successContainer}>
         <LinearGradient colors={['#f4faf7', '#e6f7f0']} style={StyleSheet.absoluteFill} />
         <View style={styles.successContent}>
-          <Animated.View
-            style={{
-              transform: [{ scale: successIconScale.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }],
-            }}
-          >
+          <Animated.View style={{ transform: [{ scale: successIconScale }] }}>
             <View style={styles.successIcon}>
-              <LinearGradient
-                colors={[colors.primaryMid, colors.primary]}
-                style={styles.successIconGradient}
-              >
+              <LinearGradient colors={[colors.primaryMid, colors.primary]} style={styles.successIconGradient}>
                 <Ionicons name="checkmark" size={40} color="#fff" />
               </LinearGradient>
             </View>
           </Animated.View>
-          <Text style={styles.successTitle}>Payment sent</Text>
+          <Text style={styles.successTitle}>Payment sent!</Text>
           <Text style={styles.successSubtitle}>
-            {`We've sent $${parseFloat(amount).toFixed(2)} to ${recipient}. You're all set.`}
+            {`$${parseFloat(amount).toFixed(2)} sent to ${recipient?.name ?? 'recipient'}. You're all set.`}
           </Text>
-          <Text style={styles.successHint}>{"You'll see this in Recent Activity on your dashboard."}</Text>
 
           <View style={styles.successDetails}>
             {[
-              { label: 'To', value: recipient },
+              { label: 'To', value: `${recipient?.name} (@${recipient?.username})` },
               { label: 'Amount', value: `$${parseFloat(amount).toFixed(2)}`, highlight: true },
-              { label: 'Fee', value: quote?.estimatedFee ?? '$0.02' },
+              { label: 'Fee', value: quote?.estimatedFee ?? '$0.00' },
               { label: 'Date', value: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) },
               { label: 'Payment ID', value: paymentId ? paymentId.slice(0, 16) + '...' : '—' },
               { label: 'Status', badge: true },
@@ -166,7 +224,7 @@ export default function SendMoneyScreen() {
                     <Text style={styles.completedText}>Completed</Text>
                   </View>
                 ) : (
-                  <Text style={[styles.detailValue, row.highlight && styles.detailValueHighlight]}>
+                  <Text style={[styles.detailValue, (row as any).highlight && styles.detailValueHighlight]}>
                     {row.value}
                   </Text>
                 )}
@@ -181,10 +239,7 @@ export default function SendMoneyScreen() {
                 <Text style={styles.primaryBtnText}>Back to Home</Text>
               </LinearGradient>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.ghostBtn}
-              onPress={() => { setStep('form'); setAmount(''); setSelectedContact(null); setManualRecipient(''); setNote(''); }}
-            >
+            <TouchableOpacity style={styles.ghostBtn} onPress={resetForm}>
               <Text style={styles.ghostBtnText}>Send More Money</Text>
             </TouchableOpacity>
           </View>
@@ -194,13 +249,10 @@ export default function SendMoneyScreen() {
   }
 
   // ── Main form ──────────────────────────────────────────────────────────────
-
   return (
     <View style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -216,58 +268,74 @@ export default function SendMoneyScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Contacts */}
-          <Text style={styles.sectionLabel}>Saved Contacts</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.contactsRow}
-            style={styles.contactsScroll}
-          >
-            {contacts.map((c: Contact) => {
-              const isSelected = selectedContact?.id === c.id;
-              return (
+
+          {/* ── Recipient search ──────────────────────────────────────────── */}
+          <Text style={styles.sectionLabel}>Send to</Text>
+
+          {/* Selected recipient chip */}
+          {recipient ? (
+            <View style={styles.selectedChip}>
+              <View style={[styles.chipAvatar, { backgroundColor: colorForUsername(recipient.username) }]}>
+                <Text style={styles.chipInitials}>{recipient.initials}</Text>
+              </View>
+              <View style={styles.chipInfo}>
+                <Text style={styles.chipName}>{recipient.name}</Text>
+                <Text style={styles.chipUsername}>@{recipient.username}</Text>
+              </View>
+              <TouchableOpacity onPress={clearRecipient} style={styles.chipClear}>
+                <Ionicons name="close-circle" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.searchWrapper}>
+              <Ionicons name="search" size={18} color={colors.textMuted} style={styles.inputIcon} />
+              <TextInput
+                style={[styles.input, textInputWeb]}
+                placeholder="Search by @username or name"
+                placeholderTextColor={colors.textMuted}
+                value={searchQuery}
+                onChangeText={handleSearchChange}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                underlineColorAndroid="transparent"
+              />
+              {searchLoading && <ActivityIndicator size="small" color={colors.primary} />}
+            </View>
+          )}
+
+          {/* Search dropdown */}
+          {showDropdown && !recipient && (
+            <View style={styles.dropdown}>
+              {searchResults.map((user) => (
                 <TouchableOpacity
-                  key={c.id}
-                  style={[styles.contactCard, isSelected && styles.contactCardSelected]}
-                  onPress={() => handleContactSelect(c)}
+                  key={user.id}
+                  style={styles.dropdownItem}
+                  onPress={() => selectUser(user)}
                   activeOpacity={0.8}
                 >
-                  <View style={[styles.contactAvatar, { backgroundColor: c.color }]}>
-                    <Text style={styles.contactInitials}>{c.initials}</Text>
+                  <View style={[styles.dropdownAvatar, { backgroundColor: colorForUsername(user.username) }]}>
+                    <Text style={styles.dropdownInitials}>{user.initials}</Text>
                   </View>
-                  <Text style={styles.contactName} numberOfLines={2}>
-                    {c.name.split(' (')[0]}
-                  </Text>
-                  {isSelected && (
-                    <View style={styles.contactCheck}>
-                      <Ionicons name="checkmark" size={10} color="#fff" />
-                    </View>
-                  )}
+                  <View style={styles.dropdownInfo}>
+                    <Text style={styles.dropdownName}>{user.name}</Text>
+                    <Text style={styles.dropdownUsername}>@{user.username}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
                 </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+              ))}
+            </View>
+          )}
 
-          {/* Manual recipient */}
-          <Text style={[styles.sectionLabel, { marginTop: spacing.xl }]}>Or enter manually</Text>
-          <View style={styles.inputWrapper}>
-            <Ionicons name="person" size={18} color={colors.textMuted} style={styles.inputIcon} />
-            <TextInput
-              style={[styles.input, textInputWeb]}
-              placeholder="Name or wallet address"
-              placeholderTextColor={colors.textMuted}
-              value={manualRecipient}
-              onChangeText={(v) => {
-                setManualRecipient(v);
-                setSelectedContact(null);
-              }}
-              returnKeyType="next"
-              underlineColorAndroid="transparent"
-            />
-          </View>
+          {/* No results hint */}
+          {searchQuery.length >= 2 && !searchLoading && searchResults.length === 0 && !recipient && (
+            <View style={styles.noResults}>
+              <Ionicons name="person-outline" size={20} color={colors.textMuted} />
+              <Text style={styles.noResultsText}>No users found for "{searchQuery}"</Text>
+            </View>
+          )}
 
-          {/* Amount */}
+          {/* ── Amount ───────────────────────────────────────────────────── */}
           <Text style={[styles.sectionLabel, { marginTop: spacing.xl }]}>Amount</Text>
           <View style={styles.inputWrapper}>
             <Ionicons name="cash" size={18} color={colors.textMuted} style={styles.inputIcon} />
@@ -287,7 +355,6 @@ export default function SendMoneyScreen() {
             <Text style={styles.currencyTag}>USD</Text>
           </View>
 
-          {/* Quick amounts */}
           <View style={styles.quickAmounts}>
             {QUICK_AMOUNTS.map((a) => (
               <TouchableOpacity
@@ -303,7 +370,7 @@ export default function SendMoneyScreen() {
             ))}
           </View>
 
-          {/* Note */}
+          {/* ── Note ─────────────────────────────────────────────────────── */}
           <Text style={[styles.sectionLabel, { marginTop: spacing.xl }]}>Note (optional)</Text>
           <View style={styles.inputWrapper}>
             <Ionicons name="chatbubble-ellipses" size={18} color={colors.textMuted} style={styles.inputIcon} />
@@ -317,10 +384,14 @@ export default function SendMoneyScreen() {
               underlineColorAndroid="transparent"
             />
           </View>
+
         </ScrollView>
 
         {/* CTA */}
         <View style={styles.ctaContainer}>
+          {!recipient && (
+            <Text style={styles.ctaHint}>Search for a QuickSend user to send money</Text>
+          )}
           <TouchableOpacity
             style={[styles.primaryBtn, !canReview && styles.primaryBtnDisabled]}
             onPress={openReview}
@@ -345,27 +416,13 @@ export default function SendMoneyScreen() {
       </KeyboardAvoidingView>
 
       {/* Review Sheet */}
-      {step === 'review' || step === 'sending' ? (
-        <Animated.View
-          style={[
-            styles.reviewOverlay,
-            { opacity: reviewAnim },
-          ]}
-        >
+      {(step === 'review' || step === 'sending') && (
+        <Animated.View style={[styles.reviewOverlay, { opacity: reviewAnim }]}>
           <TouchableOpacity style={StyleSheet.absoluteFill} onPress={closeReview} activeOpacity={1} />
           <Animated.View
             style={[
               styles.reviewSheet,
-              {
-                transform: [
-                  {
-                    translateY: reviewAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [300, 0],
-                    }),
-                  },
-                ],
-              },
+              { transform: [{ translateY: reviewAnim.interpolate({ inputRange: [0, 1], outputRange: [300, 0] }) }] },
             ]}
           >
             <View style={styles.sheetHandle} />
@@ -378,17 +435,29 @@ export default function SendMoneyScreen() {
               )}
             </View>
 
+            {/* Recipient summary */}
+            {recipient && (
+              <View style={styles.reviewRecipient}>
+                <View style={[styles.reviewAvatar, { backgroundColor: colorForUsername(recipient.username) }]}>
+                  <Text style={styles.reviewInitials}>{recipient.initials}</Text>
+                </View>
+                <View>
+                  <Text style={styles.reviewRecipientName}>{recipient.name}</Text>
+                  <Text style={styles.reviewRecipientUsername}>@{recipient.username}</Text>
+                </View>
+              </View>
+            )}
+
             <View style={styles.reviewDetails}>
               {[
-                { label: 'To', value: recipient },
                 { label: 'Amount', value: `$${parseFloat(amount).toFixed(2)}`, highlight: true },
-                { label: 'Network Fee', value: quote?.estimatedFee ?? 'Calculating...' },
-                { label: 'Total Debit', value: quote?.totalDebit ?? `$${parseFloat(amount).toFixed(2)}` },
-                { label: 'Network', value: 'Interledger (ILP)' },
+                { label: 'Network Fee', value: quote?.estimatedFee ?? '$0.00' },
+                { label: 'Total', value: quote?.totalDebit ?? `$${parseFloat(amount).toFixed(2)}` },
+                { label: 'Network', value: 'QuickSend / Interledger' },
               ].map((row, i, arr) => (
                 <View key={i} style={[styles.detailRow, i < arr.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.divider }]}>
                   <Text style={styles.detailLabel}>{row.label}</Text>
-                  <Text style={[styles.detailValue, row.highlight && styles.detailValueHighlight]}>
+                  <Text style={[styles.detailValue, (row as any).highlight && styles.detailValueHighlight]}>
                     {row.value}
                   </Text>
                 </View>
@@ -416,51 +485,57 @@ export default function SendMoneyScreen() {
               </LinearGradient>
             </TouchableOpacity>
 
-            {step === 'sending' ? (
-              <Text style={styles.sendingMessage}>Processing your payment—almost done.</Text>
-            ) : null}
-
-            <Text style={styles.ilpNote}>
-              ⚡ Powered by Interledger Protocol · Rafiki Network
-            </Text>
+            {step === 'sending' && (
+              <Text style={styles.sendingMessage}>Processing your payment — almost done.</Text>
+            )}
+            <Text style={styles.ilpNote}>⚡ Powered by Interledger Protocol · Rafiki Network</Text>
           </Animated.View>
         </Animated.View>
-      ) : null}
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-
-  // Header
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 56, paddingHorizontal: spacing.xl, paddingBottom: spacing.lg },
   backBtn: { width: 40, height: 40, borderRadius: radius.full, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', ...shadows.card },
   headerTitle: { fontSize: typography.lg, fontWeight: typography.bold, color: colors.textPrimary },
-
-  // Form
   scroll: { flex: 1 },
-  scrollContent: { paddingHorizontal: spacing.xl, paddingBottom: 100 },
+  scrollContent: { paddingHorizontal: spacing.xl, paddingBottom: 120 },
   sectionLabel: { fontSize: typography.sm, fontWeight: typography.semibold, color: colors.textSecondary, marginBottom: spacing.sm },
 
-  // Contacts
-  contactsScroll: { marginHorizontal: -spacing.xl },
-  contactsRow: { paddingHorizontal: spacing.xl, gap: spacing.md },
-  contactCard: { alignItems: 'center', gap: 8, backgroundColor: colors.card, borderRadius: radius.xl, padding: spacing.md, minWidth: 80, ...shadows.card },
-  contactCardSelected: { backgroundColor: colors.primaryLight, borderWidth: 2, borderColor: colors.primary },
-  contactAvatar: { width: 48, height: 48, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
-  contactInitials: { fontSize: typography.sm, fontWeight: typography.bold, color: colors.textPrimary },
-  contactName: { fontSize: 11, fontWeight: typography.semibold, color: colors.textPrimary, textAlign: 'center' },
-  contactCheck: { position: 'absolute', top: 8, right: 8, width: 16, height: 16, borderRadius: 8, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-
-  // Input
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: radius.lg, paddingHorizontal: spacing.lg, height: 56, ...shadows.card },
+  // Search
+  searchWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: radius.lg, paddingHorizontal: spacing.lg, height: 56, ...shadows.card },
   inputIcon: { marginRight: spacing.sm },
   input: { flex: 1, fontSize: typography.base, color: colors.textPrimary },
+
+  // Selected chip
+  selectedChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primaryLight, borderRadius: radius.xl, padding: spacing.md, gap: spacing.md, borderWidth: 1.5, borderColor: colors.primary },
+  chipAvatar: { width: 44, height: 44, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
+  chipInitials: { fontSize: typography.sm, fontWeight: typography.bold, color: colors.textPrimary },
+  chipInfo: { flex: 1, gap: 2 },
+  chipName: { fontSize: typography.base, fontWeight: typography.bold, color: colors.textPrimary },
+  chipUsername: { fontSize: typography.xs, color: colors.primary, fontWeight: typography.semibold },
+  chipClear: { padding: 4 },
+
+  // Dropdown
+  dropdown: { backgroundColor: colors.card, borderRadius: radius.xl, marginTop: spacing.sm, overflow: 'hidden', ...shadows.elevated },
+  dropdownItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.divider },
+  dropdownAvatar: { width: 42, height: 42, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
+  dropdownInitials: { fontSize: typography.sm, fontWeight: typography.bold, color: colors.textPrimary },
+  dropdownInfo: { flex: 1, gap: 2 },
+  dropdownName: { fontSize: typography.base, fontWeight: typography.semibold, color: colors.textPrimary },
+  dropdownUsername: { fontSize: typography.xs, color: colors.textMuted },
+
+  // No results
+  noResults: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md, paddingHorizontal: spacing.sm },
+  noResultsText: { fontSize: typography.sm, color: colors.textMuted },
+
+  // Amount
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.card, borderRadius: radius.lg, paddingHorizontal: spacing.lg, height: 56, ...shadows.card },
   amountInput: { fontSize: typography.xxl, fontWeight: typography.bold },
   currencyTag: { fontSize: typography.sm, fontWeight: typography.semibold, color: colors.textSecondary },
-
-  // Quick amounts
   quickAmounts: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   quickBtn: { flex: 1, paddingVertical: 12, borderRadius: radius.lg, backgroundColor: colors.card, alignItems: 'center', ...shadows.card },
   quickBtnActive: { backgroundColor: colors.primary },
@@ -469,6 +544,7 @@ const styles = StyleSheet.create({
 
   // CTA
   ctaContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: spacing.xl, paddingBottom: 36, backgroundColor: colors.background, ...shadows.bottom },
+  ctaHint: { fontSize: typography.xs, color: colors.textMuted, textAlign: 'center', marginBottom: spacing.sm },
   primaryBtn: { borderRadius: radius.xl, overflow: 'hidden' },
   primaryBtnDisabled: { opacity: 0.5 },
   btnGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, gap: spacing.sm },
@@ -478,15 +554,21 @@ const styles = StyleSheet.create({
   reviewOverlay: { position: 'absolute', inset: 0, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   reviewSheet: { backgroundColor: colors.card, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: spacing.xl, paddingBottom: 40, ...shadows.elevated },
   sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: 'center', marginBottom: spacing.lg },
-  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xl },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
   sheetTitle: { fontSize: typography.lg, fontWeight: typography.bold, color: colors.textPrimary },
   sheetClose: { width: 32, height: 32, borderRadius: radius.full, backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center' },
+  reviewRecipient: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.inputBg, borderRadius: radius.xl, padding: spacing.lg, marginBottom: spacing.lg },
+  reviewAvatar: { width: 46, height: 46, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center' },
+  reviewInitials: { fontSize: typography.base, fontWeight: typography.bold, color: colors.textPrimary },
+  reviewRecipientName: { fontSize: typography.base, fontWeight: typography.bold, color: colors.textPrimary },
+  reviewRecipientUsername: { fontSize: typography.xs, color: colors.primary, fontWeight: typography.semibold },
   reviewDetails: { backgroundColor: colors.inputBg, borderRadius: radius.xl, marginBottom: spacing.xl, overflow: 'hidden' },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   detailLabel: { fontSize: typography.sm, color: colors.textSecondary },
   detailValue: { fontSize: typography.sm, fontWeight: typography.semibold, color: colors.textPrimary },
   detailValueHighlight: { fontSize: typography.xl, fontWeight: typography.extrabold, color: colors.primary },
   ilpNote: { textAlign: 'center', fontSize: typography.xs, color: colors.textMuted, marginTop: spacing.md },
+  sendingMessage: { fontSize: typography.sm, fontWeight: typography.semibold, color: colors.primary, textAlign: 'center', marginBottom: spacing.sm },
 
   // Success
   successContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
@@ -495,14 +577,6 @@ const styles = StyleSheet.create({
   successIconGradient: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center' },
   successTitle: { fontSize: typography.xxl, fontWeight: typography.extrabold, color: colors.textPrimary },
   successSubtitle: { fontSize: typography.base, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.md, lineHeight: 22 },
-  successHint: { fontSize: typography.xs, color: colors.textMuted, textAlign: 'center', marginTop: spacing.sm, paddingHorizontal: spacing.lg },
-  sendingMessage: {
-    fontSize: typography.sm,
-    fontWeight: typography.semibold,
-    color: colors.primary,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
-  },
   successDetails: { width: '100%', backgroundColor: colors.card, borderRadius: radius.xl, overflow: 'hidden', marginVertical: spacing.md, ...shadows.card },
   completedBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.primaryLight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full },
   completedDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
