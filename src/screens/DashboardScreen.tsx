@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useWallet } from '../context/WalletContext';
+import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography, shadows } from '../utils/theme';
 import type { Payment } from '../services/paymentsService';
 import { isDemoMode, isFrontendOnly, useDemoWallet, useLiveAuth } from '../config/demo';
@@ -62,7 +63,8 @@ function TransactionRow({ tx }: { tx: Payment }) {
 
 export default function DashboardScreen() {
   const router = useRouter();
-  const { balance, transactions, isConnected, refreshBalance, refreshTransactions, isLoading } = useWallet();
+  const { balance, transactions, isConnected, refreshBalance, refreshTransactions } = useWallet();
+  const { logout, user } = useAuth();
 
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -70,6 +72,11 @@ export default function DashboardScreen() {
     setRefreshing(true);
     await Promise.all([refreshBalance(), refreshTransactions()]);
     setRefreshing(false);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/login');
   };
 
   const recentTxs = transactions.slice(0, 5);
@@ -106,16 +113,18 @@ export default function DashboardScreen() {
                 <Text style={styles.connectedText}>ILP Live</Text>
               </View>
             )}
-            <TouchableOpacity style={styles.phoneBtn} onPress={() => {}}>
-              <Ionicons name="call" size={16} color={colors.primaryLight} />
-              <Text style={styles.phoneBtnText}>Help</Text>
+            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
+              <Ionicons name="log-out-outline" size={16} color="rgba(255,255,255,0.9)" />
+              <Text style={styles.logoutBtnText}>Logout</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Balance */}
         <View style={styles.balanceSection}>
-          <Text style={styles.balanceLabel}>Total Balance</Text>
+          <Text style={styles.balanceLabel}>
+            {user?.firstName ? `Hi, ${user.firstName} 👋` : 'Total Balance'}
+          </Text>
           <Text style={styles.balanceAmount}>{balance?.formatted ?? '$0.00'}</Text>
           <Text style={styles.walletNote}>
             {isConnected
@@ -126,7 +135,7 @@ export default function DashboardScreen() {
                   ? '⚪ Simulated balance · Secure account'
                   : useDemoWallet
                     ? '⚪ Demo Mode'
-                    : '⚪ Wallet'}
+                    : '⚪ QuickSend Balance'}
           </Text>
         </View>
 
@@ -221,31 +230,6 @@ export default function DashboardScreen() {
             ))
           )}
         </View>
-
-        {/* ILP info card */}
-        {!isConnected && (
-          <TouchableOpacity
-            style={styles.ilpBanner}
-            onPress={() => router.push('/settings')}
-            activeOpacity={0.9}
-          >
-            <LinearGradient
-              colors={['#1e3a5f', '#1d4ed8']}
-              style={styles.ilpBannerGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Ionicons name="flash" size={24} color="#93c5fd" />
-              <View style={styles.ilpBannerText}>
-                <Text style={styles.ilpBannerTitle}>Connect ILP Wallet</Text>
-                <Text style={styles.ilpBannerBody}>
-                  Link your Interledger wallet for real-time, low-fee transfers via Rafiki.
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#93c5fd" />
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
       </ScrollView>
     </View>
   );
@@ -264,8 +248,8 @@ const styles = StyleSheet.create({
   connectedBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.full, paddingHorizontal: 10, paddingVertical: 4 },
   connectedDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#86efac' },
   connectedText: { fontSize: typography.xs, fontWeight: typography.semibold, color: '#d1fae5' },
-  phoneBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.full, paddingHorizontal: 10, paddingVertical: 4 },
-  phoneBtnText: { fontSize: typography.xs, fontWeight: typography.semibold, color: 'rgba(255,255,255,0.9)' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.full, paddingHorizontal: 10, paddingVertical: 4 },
+  logoutBtnText: { fontSize: typography.xs, fontWeight: typography.semibold, color: 'rgba(255,255,255,0.9)' },
 
   // Balance
   balanceSection: { marginBottom: spacing.xl },
@@ -305,11 +289,4 @@ const styles = StyleSheet.create({
   txDivider: { height: 1, backgroundColor: colors.divider, marginHorizontal: spacing.lg },
   emptyState: { alignItems: 'center', padding: spacing.xxl, gap: spacing.md },
   emptyText: { fontSize: typography.base, color: colors.textMuted },
-
-  // ILP Banner
-  ilpBanner: { borderRadius: radius.xl, overflow: 'hidden', ...shadows.card },
-  ilpBannerGradient: { flexDirection: 'row', alignItems: 'center', padding: spacing.lg, gap: spacing.md },
-  ilpBannerText: { flex: 1, gap: 3 },
-  ilpBannerTitle: { fontSize: typography.base, fontWeight: typography.bold, color: '#fff' },
-  ilpBannerBody: { fontSize: typography.xs, color: '#93c5fd', lineHeight: 18 },
 });
