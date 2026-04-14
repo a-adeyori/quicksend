@@ -26,9 +26,9 @@ async function main() {
   // Send payment
   const payment = await fetch('https://quicksend-production.up.railway.app/api/v1/payments/send', {
     method: 'POST',
-    headers: { 'Content-Tyspe': 'application/json', 'Authorization': `Bearer ${reg1.accessToken}` },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${reg1.accessToken}` },
     body: JSON.stringify({
-      recipientWalletAddress: reg2.user.walletAddress,
+      toWalletAddress: reg2.user.walletAddress,
       amountDollars: 10,
       note: 'Test payment'
     })
