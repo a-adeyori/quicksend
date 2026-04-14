@@ -22,11 +22,10 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<void>;
-  register: (params: { firstName: string; lastName: string; email: string; phone?: string; password: string }) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
+  register: (params: { firstName: string; lastName: string; username: string; email: string; phone?: string; password: string }) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
-  /** Re-enter demo session after logout (demo builds only). */
   enterDemo: () => void;
 }
 
@@ -48,7 +47,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: false,
   });
 
-  // On mount — frontend-only or unreachable API: welcome first. Local LAN demo: optional auto sign-in. Else JWT.
   useEffect(() => {
     if (isFrontendOnly || isBackendUnreachableFromThisClient) {
       setState({ user: null, isLoading: false, isAuthenticated: false });
@@ -56,12 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     if (useAutoDemoSession) {
       setState({
-        user: {
-          id: DEMO_USER.id,
-          email: DEMO_USER.email,
-          firstName: DEMO_USER.firstName,
-          lastName: DEMO_USER.lastName,
-        },
+        user: { id: DEMO_USER.id, email: DEMO_USER.email, username: 'demo', firstName: DEMO_USER.firstName, lastName: DEMO_USER.lastName },
         isLoading: false,
         isAuthenticated: true,
       });
@@ -83,7 +76,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  // Listen for token expiry (no refresh possible)
   useEffect(() => {
     const handler = () => {
       setState({ user: null, isLoading: false, isAuthenticated: false });
@@ -93,56 +85,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => authEventEmitter.off(handler);
   }, [router]);
 
-  // Route guard — only after navigator is mounted (avoids "navigate before Root Layout" crash)
   useEffect(() => {
     if (state.isLoading || !rootNavigation?.key) return;
-
     const first = segments[0];
     const isPublic = isPublicRouteSegment(first);
-
-    if (!state.isAuthenticated && !isPublic) {
-      router.replace('/');
-      return;
-    }
-    if (state.isAuthenticated && isPublic) {
-      router.replace('/dashboard');
-    }
+    if (!state.isAuthenticated && !isPublic) { router.replace('/'); return; }
+    if (state.isAuthenticated && isPublic) { router.replace('/dashboard'); }
   }, [state.isAuthenticated, state.isLoading, segments, rootNavigation?.key, router]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  // identifier = username or email
+  const login = useCallback(async (identifier: string, password: string) => {
     if (canUseLocalDemoLogin) {
       setState({
-        user: {
-          id: DEMO_USER.id,
-          email: email || DEMO_USER.email,
-          firstName: DEMO_USER.firstName,
-          lastName: DEMO_USER.lastName,
-        },
+        user: { id: DEMO_USER.id, email: DEMO_USER.email, username: 'demo', firstName: DEMO_USER.firstName, lastName: DEMO_USER.lastName },
         isLoading: false,
         isAuthenticated: true,
       });
       return;
     }
-    const { user } = await authService.login(email, password);
+    const { user } = await authService.login(identifier, password);
     setState({ user, isLoading: false, isAuthenticated: true });
   }, []);
 
   const register = useCallback(async (params: Parameters<typeof authService.register>[0]) => {
     if (canUseLocalDemoLogin) {
       setState({
-        user: {
-          id: DEMO_USER.id,
-          email: params.email,
-          firstName: params.firstName,
-          lastName: params.lastName,
-        },
+        user: { id: DEMO_USER.id, email: params.email, username: params.username, firstName: params.firstName, lastName: params.lastName },
         isLoading: false,
         isAuthenticated: true,
       });
       return;
     }
     await authService.register(params);
-    // Do not auto sign-in: clear tokens and send user to login (matches product flow + avoids silent dashboard redirect).
     await clearTokens();
     setState({ user: null, isLoading: false, isAuthenticated: false });
     router.replace('/login?registered=1');
@@ -151,27 +125,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const enterDemo = useCallback(() => {
     if (useLiveAuth || !canUseLocalDemoLogin) return;
     setState({
-      user: {
-        id: DEMO_USER.id,
-        email: DEMO_USER.email,
-        firstName: DEMO_USER.firstName,
-        lastName: DEMO_USER.lastName,
-      },
+      user: { id: DEMO_USER.id, email: DEMO_USER.email, username: 'demo', firstName: DEMO_USER.firstName, lastName: DEMO_USER.lastName },
       isLoading: false,
       isAuthenticated: true,
     });
-    // Route guard will send to /dashboard once navigator is ready
   }, []);
 
   const logout = useCallback(async () => {
-    if (useLiveAuth) {
-      await authService.logout();
-    } else {
-      await clearTokens();
-    }
-    if (isFrontendOnly || canUseLocalDemoLogin) {
-      clearDemoWallet();
-    }
+    if (useLiveAuth) { await authService.logout(); } else { await clearTokens(); }
+    if (isFrontendOnly || canUseLocalDemoLogin) clearDemoWallet();
     await clearIlpGnapToken();
     setState({ user: null, isLoading: false, isAuthenticated: false });
     router.replace('/');

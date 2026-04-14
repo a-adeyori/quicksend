@@ -3,6 +3,7 @@ import { api, saveTokens, clearTokens } from './apiClient';
 export interface AuthUser {
   id: string;
   email: string;
+  username: string;
   firstName: string;
   lastName: string;
 }
@@ -17,6 +18,7 @@ export const authService = {
   async register(params: {
     firstName: string;
     lastName: string;
+    username: string;
     email: string;
     phone?: string;
     password: string;
@@ -26,8 +28,9 @@ export const authService = {
     return data;
   },
 
-  async login(email: string, password: string): Promise<AuthResponse> {
-    const { data } = await api.post<AuthResponse>('/auth/login', { email, password });
+  async login(identifier: string, password: string): Promise<AuthResponse> {
+    // identifier = email or username
+    const { data } = await api.post<AuthResponse>('/auth/login', { identifier, password });
     await saveTokens(data.accessToken, data.refreshToken);
     return data;
   },

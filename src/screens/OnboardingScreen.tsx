@@ -18,9 +18,15 @@ function regErrorMessage(err: unknown): string {
   return 'Could not create your account. Please try again.';
 }
 
-type FormState = { firstName: string; lastName: string; phone: string; email: string; password: string };
+type FormState = {
+  firstName: string;
+  lastName: string;
+  username: string;
+  phone: string;
+  email: string;
+  password: string;
+};
 
-/** Must be outside the screen: an inner component remounts every render and kills TextInput focus on web/native. */
 function OnboardingField({
   icon,
   label,
@@ -30,6 +36,7 @@ function OnboardingField({
   secureTextEntry = false,
   placeholder = '',
   autoCapitalize = 'words',
+  prefix,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
@@ -39,12 +46,14 @@ function OnboardingField({
   secureTextEntry?: boolean;
   placeholder?: string;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  prefix?: string;
 }) {
   return (
     <View style={styles.fieldGroup}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <View style={styles.inputWrapper}>
         <Ionicons name={icon} size={18} color={colors.textMuted} />
+        {prefix ? <Text style={styles.prefix}>{prefix}</Text> : null}
         <TextInput
           style={[styles.input, textInputWeb]}
           value={value}
@@ -67,16 +76,49 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>({ firstName: '', lastName: '', phone: '', email: '', password: '' });
+  const [form, setForm] = useState<FormState>({
+    firstName: '',
+    lastName: '',
+    username: '',
+    phone: '',
+    email: '',
+    password: '',
+  });
 
   const update = (k: keyof FormState, v: string) => {
     setForm(p => ({ ...p, [k]: v }));
     if (errorMessage) setErrorMessage(null);
   };
 
+  const handleNext = () => {
+    // Validate step 1
+    if (!form.firstName.trim()) {
+      setErrorMessage('Please enter your first name.');
+      return;
+    }
+    if (!form.lastName.trim()) {
+      setErrorMessage('Please enter your last name.');
+      return;
+    }
+    if (!form.username.trim()) {
+      setErrorMessage('Please choose a username.');
+      return;
+    }
+    if (form.username.length < 3) {
+      setErrorMessage('Username must be at least 3 characters.');
+      return;
+    }
+    setErrorMessage(null);
+    setStep(2);
+  };
+
   const handleSubmit = async () => {
-    if (!form.firstName || !form.lastName || !form.email || !form.password) {
-      setErrorMessage('Please fill in all required fields (first name, last name, email, password).');
+    if (!form.email.trim()) {
+      setErrorMessage('Please enter your email address.');
+      return;
+    }
+    if (!form.password) {
+      setErrorMessage('Please create a password.');
       return;
     }
     if (form.password.length < 8) {
@@ -89,11 +131,11 @@ export default function OnboardingScreen() {
       await register({
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
+        username: form.username.trim(),
         email: form.email.trim(),
         phone: form.phone.trim() || undefined,
         password: form.password,
       });
-      // AuthContext clears session and navigates to /login?registered=1
     } catch (err: unknown) {
       const msg = regErrorMessage(err);
       setErrorMessage(msg);
@@ -107,6 +149,7 @@ export default function OnboardingScreen() {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
       <LinearGradient colors={['#f4faf7', '#e6f7f0']} style={StyleSheet.absoluteFill} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backBtn}
@@ -140,8 +183,30 @@ export default function OnboardingScreen() {
         <View style={styles.fields}>
           {step === 1 ? (
             <>
-              <OnboardingField icon="person" label="First Name" value={form.firstName} onChangeText={t => update('firstName', t)} />
-              <OnboardingField icon="person" label="Last Name" value={form.lastName} onChangeText={t => update('lastName', t)} />
+              <OnboardingField
+                icon="person"
+                label="First Name"
+                value={form.firstName}
+                onChangeText={t => update('firstName', t)}
+              />
+              <OnboardingField
+                icon="person"
+                label="Last Name"
+                value={form.lastName}
+                onChangeText={t => update('lastName', t)}
+              />
+              <OnboardingField
+                icon="at"
+                label="Username"
+                value={form.username}
+                onChangeText={t => update('username', t.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                placeholder="e.g. yori_sends"
+                autoCapitalize="none"
+                prefix="@"
+              />
+              <Text style={styles.hint}>
+                This is how others find and send money to you. Lowercase letters, numbers, and underscores only.
+              </Text>
               <OnboardingField
                 icon="call"
                 label="Phone Number (optional)"
@@ -149,6 +214,7 @@ export default function OnboardingScreen() {
                 onChangeText={t => update('phone', t)}
                 keyboardType="phone-pad"
                 placeholder="(555) 123-4567"
+                autoCapitalize="none"
               />
             </>
           ) : (
@@ -177,14 +243,11 @@ export default function OnboardingScreen() {
 
         <TouchableOpacity
           style={[styles.ctaBtn, loading && { opacity: 0.7 }]}
-          onPress={() => step < 2 ? setStep(2) : handleSubmit()}
+          onPress={step < 2 ? handleNext : handleSubmit}
           disabled={loading}
           activeOpacity={0.85}
         >
-          <LinearGradient
-            colors={[colors.primaryMid, colors.primary]}
-            style={styles.btnGradient}
-          >
+          <LinearGradient colors={[colors.primaryMid, colors.primary]} style={styles.btnGradient}>
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
@@ -195,6 +258,7 @@ export default function OnboardingScreen() {
             )}
           </LinearGradient>
         </TouchableOpacity>
+
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -211,23 +275,19 @@ const styles = StyleSheet.create({
   progressSegment: { flex: 1, height: 6, borderRadius: 3, backgroundColor: colors.border },
   progressActive: { backgroundColor: colors.primary },
   errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: '#fef2f2',
-    borderRadius: radius.lg,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderWidth: 1,
-    borderColor: '#fecaca',
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+    backgroundColor: '#fef2f2', borderRadius: radius.lg,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.lg,
+    borderWidth: 1, borderColor: '#fecaca',
   },
   errorBannerText: { flex: 1, fontSize: typography.sm, color: colors.error, fontWeight: typography.medium },
   fields: { gap: spacing.lg, flex: 1 },
   fieldGroup: { gap: spacing.sm },
   fieldLabel: { fontSize: typography.sm, fontWeight: typography.semibold, color: colors.textPrimary },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.card, borderRadius: radius.lg, paddingHorizontal: spacing.lg, height: 56, ...shadows.card },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.card, borderRadius: radius.lg, paddingHorizontal: spacing.lg, height: 56, ...shadows.card },
+  prefix: { fontSize: typography.base, fontWeight: typography.semibold, color: colors.primary },
   input: { flex: 1, fontSize: typography.md, color: colors.textPrimary },
-  hint: { fontSize: typography.xs, color: colors.textMuted, marginTop: -spacing.sm },
+  hint: { fontSize: typography.xs, color: colors.textMuted, marginTop: -spacing.sm, lineHeight: 18 },
   ctaBtn: { borderRadius: radius.xl, overflow: 'hidden', marginTop: 'auto' },
   btnGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 18, gap: spacing.sm },
   ctaText: { fontSize: typography.md, fontWeight: typography.bold, color: '#fff' },

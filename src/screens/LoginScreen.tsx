@@ -1,15 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Alert,
-  ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, TextInput,
+  KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,14 +17,14 @@ function errMessage(err: unknown): string {
   if (err && typeof err === 'object' && 'message' in err && typeof (err as { message: string }).message === 'string') {
     return (err as { message: string }).message;
   }
-  return 'Invalid email or password.';
+  return 'Invalid username/email or password.';
 }
 
 export default function LoginScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ registered?: string }>();
   const { login, enterDemo } = useAuth();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState(''); // username or email
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -46,20 +38,18 @@ export default function LoginScreen() {
   }, [params.registered]);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      setErrorMessage('Enter your email and password.');
+    if (!identifier || !password) {
+      setErrorMessage('Enter your username (or email) and password.');
       return;
     }
     setLoading(true);
     setErrorMessage(null);
     try {
-      await login(email.trim(), password);
+      await login(identifier.trim(), password);
     } catch (err: unknown) {
       const msg = errMessage(err);
       setErrorMessage(msg);
-      if (Platform.OS !== 'web') {
-        Alert.alert('Sign In Failed', msg);
-      }
+      if (Platform.OS !== 'web') Alert.alert('Sign In Failed', msg);
     } finally {
       setLoading(false);
     }
@@ -88,10 +78,7 @@ export default function LoginScreen() {
         {/* Back */}
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => {
-            if (router.canGoBack()) router.back();
-            else router.replace('/');
-          }}
+          onPress={() => { if (router.canGoBack()) router.back(); else router.replace('/'); }}
         >
           <Ionicons name="arrow-back" size={20} color={colors.textPrimary} />
         </TouchableOpacity>
@@ -102,13 +89,13 @@ export default function LoginScreen() {
             <Ionicons name="flash" size={32} color={colors.primary} />
           </View>
           <Text style={styles.logoTitle}>Welcome Back</Text>
-          <Text style={styles.logoSub}>Sign in to your QuickSend account</Text>
+          <Text style={styles.logoSub}>Sign in with your username or email</Text>
         </View>
 
         {showRegisteredBanner ? (
           <View style={styles.successBanner}>
             <Ionicons name="checkmark-circle" size={20} color={colors.success} />
-            <Text style={styles.successBannerText}>Account created. Sign in with your email and password.</Text>
+            <Text style={styles.successBannerText}>Account created! Sign in with your username or email.</Text>
             <TouchableOpacity onPress={() => setShowRegisteredBanner(false)} hitSlop={12}>
               <Ionicons name="close" size={18} color={colors.textMuted} />
             </TouchableOpacity>
@@ -125,18 +112,16 @@ export default function LoginScreen() {
         {/* Form */}
         <View style={styles.form}>
           <View style={styles.inputWrapper}>
-            <Ionicons name="mail" size={18} color={colors.textMuted} />
+            <Ionicons name="person" size={18} color={colors.textMuted} />
             <TextInput
               style={[styles.input, textInputWeb]}
-              placeholder="Email or username"
+              placeholder="@username or email"
               placeholderTextColor={colors.textMuted}
-              value={email}
-              onChangeText={(t) => {
-                setEmail(t);
-                if (errorMessage) setErrorMessage(null);
-              }}
+              value={identifier}
+              onChangeText={(t) => { setIdentifier(t); if (errorMessage) setErrorMessage(null); }}
               keyboardType="email-address"
               autoCapitalize="none"
+              autoCorrect={false}
               underlineColorAndroid="transparent"
             />
           </View>
@@ -148,10 +133,7 @@ export default function LoginScreen() {
               placeholder="Password"
               placeholderTextColor={colors.textMuted}
               value={password}
-              onChangeText={(t) => {
-                setPassword(t);
-                if (errorMessage) setErrorMessage(null);
-              }}
+              onChangeText={(t) => { setPassword(t); if (errorMessage) setErrorMessage(null); }}
               secureTextEntry={!showPass}
               underlineColorAndroid="transparent"
             />
@@ -167,7 +149,7 @@ export default function LoginScreen() {
 
         {/* Sign In */}
         <TouchableOpacity style={styles.signInBtn} onPress={handleLogin} activeOpacity={0.85} disabled={loading}>
-          <LinearGradient colors={loading ? ['#aaa','#999'] : [colors.primaryMid, colors.primary]} style={styles.btnGradient}>
+          <LinearGradient colors={loading ? ['#aaa', '#999'] : [colors.primaryMid, colors.primary]} style={styles.btnGradient}>
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.signInText}>Sign In</Text>}
           </LinearGradient>
         </TouchableOpacity>
@@ -175,16 +157,12 @@ export default function LoginScreen() {
         {(isFrontendOnly || canUseLocalDemoLogin) && (
           <TouchableOpacity
             style={styles.demoLaunch}
-            onPress={() => {
-              enterDemo();
-              router.replace('/dashboard');
-            }}
+            onPress={() => { enterDemo(); router.replace('/dashboard'); }}
             activeOpacity={0.9}
           >
             <LinearGradient
               colors={['#1e3a5f', '#2563eb']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={styles.demoLaunchGradient}
             >
               <Ionicons name="flash" size={22} color="#93c5fd" />
@@ -216,6 +194,13 @@ export default function LoginScreen() {
             Sign up
           </Text>
         </Text>
+
+        {/* Demo credentials hint */}
+        <View style={styles.demoHint}>
+          <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
+          <Text style={styles.demoHintText}>Demo account: @demo / password123</Text>
+        </View>
+
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -229,29 +214,9 @@ const styles = StyleSheet.create({
   logoCircle: { width: 72, height: 72, borderRadius: 22, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
   logoTitle: { fontSize: typography.xxl, fontWeight: typography.extrabold, color: colors.textPrimary },
   logoSub: { fontSize: typography.base, color: colors.textSecondary },
-  successBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.lg,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
+  successBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primaryLight, borderRadius: radius.lg, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderWidth: 1, borderColor: colors.border },
   successBannerText: { flex: 1, fontSize: typography.sm, color: colors.textPrimary, fontWeight: typography.medium },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: '#fef2f2',
-    borderRadius: radius.lg,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderWidth: 1,
-    borderColor: '#fecaca',
-  },
+  errorBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: '#fef2f2', borderRadius: radius.lg, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderWidth: 1, borderColor: '#fecaca' },
   errorBannerText: { flex: 1, fontSize: typography.sm, color: colors.error, fontWeight: typography.medium },
   form: { gap: spacing.md },
   inputWrapper: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.card, borderRadius: radius.lg, paddingHorizontal: spacing.lg, height: 56, ...shadows.card },
@@ -260,18 +225,12 @@ const styles = StyleSheet.create({
   forgotText: { fontSize: typography.sm, color: colors.primary, fontWeight: typography.semibold },
   signInBtn: { borderRadius: radius.xl, overflow: 'hidden' },
   btnGradient: { alignItems: 'center', justifyContent: 'center', paddingVertical: 18 },
+  signInText: { fontSize: typography.md, fontWeight: typography.bold, color: '#fff' },
   demoLaunch: { borderRadius: radius.xl, overflow: 'hidden', marginTop: spacing.sm },
-  demoLaunchGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
-  },
+  demoLaunchGradient: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.lg, paddingHorizontal: spacing.lg },
   demoLaunchText: { flex: 1, gap: 4 },
   demoLaunchTitle: { fontSize: typography.md, fontWeight: typography.bold, color: '#fff' },
   demoLaunchSub: { fontSize: typography.xs, color: '#93c5fd', lineHeight: 16 },
-  signInText: { fontSize: typography.md, fontWeight: typography.bold, color: '#fff' },
   dividerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: { fontSize: typography.sm, color: colors.textMuted },
@@ -279,4 +238,6 @@ const styles = StyleSheet.create({
   biometricText: { fontSize: typography.base, fontWeight: typography.semibold, color: colors.primary },
   footer: { textAlign: 'center', fontSize: typography.sm, color: colors.textSecondary },
   footerLink: { color: colors.primary, fontWeight: typography.bold },
+  demoHint: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  demoHintText: { fontSize: typography.xs, color: colors.textMuted },
 });
