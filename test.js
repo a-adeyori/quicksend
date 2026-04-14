@@ -23,12 +23,12 @@ async function main() {
   }).then(r => r.json());
   console.log('Deposit:', deposit);
 
-  // Send payment
+  // Send payment — use recipientEmail to look up internal user
   const payment = await fetch('https://quicksend-production.up.railway.app/api/v1/payments/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${reg1.accessToken}` },
     body: JSON.stringify({
-      toWalletAddress: reg2.user.walletAddress,
+      recipientEmail: reg2.user.email,
       amountDollars: 10,
       note: 'Test payment'
     })
