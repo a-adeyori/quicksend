@@ -93,6 +93,7 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
           const created = await rafikiAdminService.createWalletAddress({
             publicName: `${user.firstName} ${user.lastName}`.trim(),
             assetId: config.rafikiWalletAssetId,
+            username: body.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
           });
           walletAddress = created.url;
           await db.user.update({
