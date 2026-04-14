@@ -1,6 +1,6 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
-
+ARG CACHEBUST=1
 WORKDIR /app
 
 COPY package*.json ./
@@ -11,7 +11,7 @@ RUN npx prisma generate
 
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build
+RUN npm run build && echo "BUILD COMPLETE $(date)"
 
 # ── Stage 2: Production ────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
