@@ -309,7 +309,7 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
 
     // ── ILP flow (if wallet connected) ────────────────────────────────────
 
-    if (sender.walletAddress && !recipientUser) {
+    if (sender.walletAddress && !recipientUser?.id ) {
       // Update status to PROCESSING
       await db.payment.update({ where: { id: payment.id }, data: { status: 'PROCESSING' } });
 
