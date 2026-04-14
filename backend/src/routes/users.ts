@@ -24,24 +24,52 @@ const searchSchema = z.object({
 });
 
 // GET /users/profile
-usersRouter.get('/profile', async (req: Request, res: Response, next: NextFunction) => {
+usersRouter.get('/search', authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const user = await db.user.findUnique({
-      where: { id: (req as AuthRequest).user.id },
-      select: {
-        id: true, email: true, firstName: true, lastName: true, phone: true,
-        walletAddress: true, balanceCents: true, assetCode: true, assetScale: true,
-        kycStatus: true, isVerified: true, createdAt: true,
+    const q = (req.query.q as string ?? '').trim();
+    if (q.length < 2) {
+      res.json({ users: [] });
+      return;
+    }
+
+    const userId = (req as AuthRequest).user.id;
+
+    const users = await db.user.findMany({
+      where: {
+        AND: [
+          { id: { not: userId } }, // exclude self
+          {
+            OR: [
+              { firstName: { contains: q, mode: 'insensitive' } },
+              { lastName: { contains: q, mode: 'insensitive' } },
+              { email: { contains: q, mode: 'insensitive' } },
+            ],
+          },
+          { isActive: true },
+        ],
       },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        walletAddress: true,
+      },
+      take: 10,
     });
-    if (!user) throw AppError.notFound('User');
 
     res.json({
-      ...user,
-      balanceCents: Number(user.balanceCents),
-      balanceFormatted: formatCurrency(user.balanceCents.toString(), user.assetScale, user.assetCode),
+      users: users.map(u => ({
+        id: u.id,
+        name: `${u.firstName} ${u.lastName}`.trim(),
+        email: u.email,
+        walletAddress: u.walletAddress,
+        initials: `${u.firstName[0]}${u.lastName[0]}`.toUpperCase(),
+      })),
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 });
 
 // PATCH /users/profile
