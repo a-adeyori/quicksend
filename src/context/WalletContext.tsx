@@ -22,7 +22,6 @@ interface WalletState {
   error: string | null;
   hasMoreTransactions: boolean;
   nextCursor: string | null;
-  /** GNAP token for Open Payments / ILP (stored per device; Settings UI). */
   ilpAccessToken: string | null;
 }
 
@@ -35,7 +34,8 @@ interface WalletContextType extends WalletState {
   loadMoreTransactions: () => Promise<void>;
   refreshContacts: () => Promise<void>;
   sendMoney: (params: {
-    recipientWalletAddress: string;
+    recipientUsername?: string;
+    recipientWalletAddress?: string;
     recipientName: string;
     amountDollars: number;
     note?: string;
@@ -182,12 +182,7 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
       setState({
         isConnected: false,
         walletAddress: DEMO_PLATFORM_WALLET,
-        balance: {
-          value: '854732',
-          assetCode: 'USD',
-          assetScale: 2,
-          formatted: '$8,547.32',
-        },
+        balance: { value: '854732', assetCode: 'USD', assetScale: 2, formatted: '$8,547.32' },
         transactions: buildDemoTransactions(DEMO_USER.id),
         contacts: buildDemoContacts(),
         isLoading: false,
@@ -224,25 +219,16 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated) return;
     const id = setTimeout(() => {
-      saveDemoWalletJson(
-        JSON.stringify({
-          balance: state.balance,
-          transactions: state.transactions,
-          contacts: state.contacts,
-          isConnected: state.isConnected,
-          walletAddress: state.walletAddress,
-        })
-      );
+      saveDemoWalletJson(JSON.stringify({
+        balance: state.balance,
+        transactions: state.transactions,
+        contacts: state.contacts,
+        isConnected: state.isConnected,
+        walletAddress: state.walletAddress,
+      }));
     }, 450);
     return () => clearTimeout(id);
-  }, [
-    isAuthenticated,
-    state.balance,
-    state.transactions,
-    state.contacts,
-    state.isConnected,
-    state.walletAddress,
-  ]);
+  }, [isAuthenticated, state.balance, state.transactions, state.contacts, state.isConnected, state.walletAddress]);
 
   const setAccessToken = useCallback(async (token: string) => {
     await saveIlpGnapToken(token);
@@ -252,12 +238,7 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
   const connectWallet = useCallback(async (url: string) => {
     setState(s => ({ ...s, isLoading: true, error: null }));
     await new Promise(r => setTimeout(r, 400));
-    setState(s => ({
-      ...s,
-      isConnected: true,
-      walletAddress: url || DEMO_PLATFORM_WALLET,
-      isLoading: false,
-    }));
+    setState(s => ({ ...s, isConnected: true, walletAddress: url || DEMO_PLATFORM_WALLET, isLoading: false }));
   }, []);
 
   const disconnectWallet = useCallback(async () => {
@@ -284,19 +265,22 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendMoney = useCallback(async (params: {
-    recipientWalletAddress: string;
+    recipientUsername?: string;
+    recipientWalletAddress?: string;
     recipientName: string;
     amountDollars: number;
     note?: string;
   }): Promise<{ success: boolean; paymentId?: string; error?: string }> => {
     setState(s => ({ ...s, isLoading: true, error: null }));
     await new Promise(r => setTimeout(r, 350));
-    // Read latest state once (avoids React 18 Strict Mode double-invoking setState updaters and corrupting the return value).
     const s = stateRef.current;
     const balanceCents = s.balance ? parseInt(s.balance.value, 10) : 0;
     const { payment, newBalanceCents, error } = makeDemoPayment({
       senderId,
-      ...params,
+      recipientWalletAddress: params.recipientWalletAddress ?? `https://demo.wallet/${params.recipientName}`,
+      recipientName: params.recipientName,
+      amountDollars: params.amountDollars,
+      note: params.note,
       balanceCentsBefore: balanceCents,
     });
     if (error) {
@@ -312,9 +296,7 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
         ? {
             ...prev.balance,
             value: newBalanceCents.toString(),
-            formatted: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
-              newBalanceCents / 100
-            ),
+            formatted: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(newBalanceCents / 100),
           }
         : null,
     }));
@@ -322,20 +304,12 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
   }, [senderId]);
 
   return (
-    <WalletContext.Provider
-      value={{
-        ...state,
-        connectWallet,
-        disconnectWallet,
-        setAccessToken,
-        refreshBalance,
-        refreshTransactions,
-        loadMoreTransactions,
-        refreshContacts,
-        getQuote,
-        sendMoney,
-      }}
-    >
+    <WalletContext.Provider value={{
+      ...state,
+      connectWallet, disconnectWallet, setAccessToken,
+      refreshBalance, refreshTransactions, loadMoreTransactions,
+      refreshContacts, getQuote, sendMoney,
+    }}>
       {children}
     </WalletContext.Provider>
   );
@@ -399,7 +373,8 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
       const info = await walletService.getInfo();
       setState(s => ({ ...s, isConnected: true, walletAddress: url, balance: info.balance, isLoading: false }));
     } catch (err: unknown) {
-      const message = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : 'Failed to connect wallet.';
+      const message = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message: string }).message) : 'Failed to connect wallet.';
       setState(s => ({ ...s, isLoading: false, error: message }));
     }
   }, []);
@@ -467,14 +442,21 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendMoney = useCallback(async (params: {
-    recipientWalletAddress: string;
+    recipientUsername?: string;
+    recipientWalletAddress?: string;
     recipientName: string;
     amountDollars: number;
     note?: string;
   }): Promise<{ success: boolean; paymentId?: string; error?: string }> => {
     setState(s => ({ ...s, isLoading: true, error: null }));
     try {
-      const result = await paymentsService.send(params);
+      const result = await paymentsService.send({
+        recipientUsername: params.recipientUsername,
+        recipientWalletAddress: params.recipientWalletAddress,
+        recipientName: params.recipientName,
+        amountDollars: params.amountDollars,
+        note: params.note,
+      });
       setState(s => ({
         ...s,
         isLoading: false,
@@ -486,14 +468,16 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
             .format((parseInt(s.balance.value, 10) - result.payment.debitAmountCents) / 10 ** s.balance.assetScale),
         } : null,
       }));
-      refreshBalance();
+      void refreshBalance();
+      void refreshTransactions();
       return { success: result.payment.status === 'COMPLETED', paymentId: result.payment.id };
     } catch (err: unknown) {
-      const message = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : 'Payment failed';
+      const message = err && typeof err === 'object' && 'message' in err
+        ? String((err as { message: string }).message) : 'Payment failed';
       setState(s => ({ ...s, isLoading: false, error: message }));
       return { success: false, error: message };
     }
-  }, [refreshBalance]);
+  }, [refreshBalance, refreshTransactions]);
 
   return (
     <WalletContext.Provider value={{
@@ -501,8 +485,7 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
       connectWallet, disconnectWallet, setAccessToken,
       refreshBalance, refreshTransactions, loadMoreTransactions,
       refreshContacts, getQuote, sendMoney,
-    }}
-    >
+    }}>
       {children}
     </WalletContext.Provider>
   );

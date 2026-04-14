@@ -46,7 +46,8 @@ export const paymentsService = {
   },
 
   async send(params: {
-    recipientWalletAddress: string;
+    recipientUsername?: string;
+    recipientWalletAddress?: string;
     recipientName: string;
     amountDollars: number;
     note?: string;
