@@ -22,16 +22,14 @@ import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestId } from './middleware/requestId';
 
-console.log('>> core imports done');
-
-// Routes — commented out to isolate crash
-// import authRoutes from './routes/auth';
-// import userRoutes from './routes/users';
-// import paymentRoutes from './routes/payments';
-// import contactRoutes from './routes/contacts';
-// import walletRoutes from './routes/wallet';
-// import webhookRoutes from './routes/webhooks';
-// import adminRoutes from './routes/admin';
+// Routes
+import authRoutes from './routes/auth';
+import userRoutes from './routes/users';
+import paymentRoutes from './routes/payments';
+import contactRoutes from './routes/contacts';
+import walletRoutes from './routes/wallet';
+import webhookRoutes from './routes/webhooks';
+import adminRoutes from './routes/admin';
 
 console.log('>> index.ts loaded, building express app...');
 
@@ -83,13 +81,13 @@ const API = `/api/${config.apiVersion}`;
 
 console.log(`>> Registering routes under ${API}`);
 
-// app.use(`${API}/auth`,      authRoutes);
-// app.use(`${API}/users`,     userRoutes);
-// app.use(`${API}/payments`,  paymentRoutes);
-// app.use(`${API}/contacts`,  contactRoutes);
-// app.use(`${API}/wallet`,    walletRoutes);
-// app.use(`${API}/webhooks`,  webhookRoutes);
-// app.use(`${API}/admin`,     adminRoutes);
+app.use(`${API}/auth`,      authRoutes);
+app.use(`${API}/users`,     userRoutes);
+app.use(`${API}/payments`,  paymentRoutes);
+app.use(`${API}/contacts`,  contactRoutes);
+app.use(`${API}/wallet`,    walletRoutes);
+app.use(`${API}/webhooks`,  webhookRoutes);
+app.use(`${API}/admin`,     adminRoutes);
 
 // ─── 404 ───────────────────────────────────────────────────────────────────────
 app.use((_req, res) => {
