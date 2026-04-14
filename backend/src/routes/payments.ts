@@ -236,9 +236,9 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
     });
 
     if (!sender) throw AppError.notFound('User');
-    if (sender.kycStatus !== 'APPROVED') {
-      throw AppError.forbidden('Account verification required to send money');
-    }
+    // if (sender.kycStatus !== 'APPROVED') {
+    //   throw AppError.forbidden('Account verification required to send money');
+    // }
 
     const debitCents = BigInt(dollarsToUnits(body.amountDollars, sender.assetScale ?? 2));
 
