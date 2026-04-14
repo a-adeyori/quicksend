@@ -1,3 +1,4 @@
+// v2 - username support
 import { Router, Request, Response, NextFunction } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
@@ -28,7 +29,7 @@ const quoteSchema = z.object({
 });
 
 const sendSchema = z.object({
-  recipientUsername: z.string().min(1).max(30).optional(),  // ← NEW: @username
+  recipientUsername: z.string().min(1).max(30).optional(),
   recipientWalletAddress: z.string().url().optional(),
   recipientUserId: z.string().uuid().optional(),
   recipientEmail: z.string().email().optional(),
@@ -172,7 +173,6 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
     } | null = null;
 
     if (body.recipientUsername) {
-      // Strip leading @ if present
       const uname = body.recipientUsername.replace(/^@/, '').toLowerCase();
       recipientUser = await db.user.findUnique({
         where: { username: uname },
@@ -200,8 +200,11 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
       throw AppError.badRequest('You cannot send money to yourself', 'SELF_TRANSFER_NOT_ALLOWED');
     }
 
-    const recipientWalletAddress = recipientUser?.walletAddress ?? body.recipientWalletAddress;
-    if (!recipientWalletAddress) {
+    // For internal transfers we don't need a wallet address
+    const recipientWalletAddress = recipientUser?.walletAddress ?? body.recipientWalletAddress ?? '';
+
+    // Only require wallet address for external transfers (no recipientUser found)
+    if (!recipientUser && !recipientWalletAddress) {
       throw AppError.badRequest(
         'Recipient not found. Search by @username, email, or wallet address.',
         'RECIPIENT_REQUIRED'
@@ -218,7 +221,7 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
       data: {
         senderId: userId,
         receiverId: recipientUser?.id,
-        recipientWalletAddress,
+        recipientWalletAddress: recipientWalletAddress || `internal:${recipientUser?.id}`,
         recipientName,
         debitAmountCents: debitCents,
         receiveAmountCents: debitCents,
@@ -231,8 +234,7 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
 
     logger.info('Payment initiated', { paymentId: payment.id, userId, amount: body.amountDollars });
 
-    // ── Internal transfer (both users on QuickSend) ───────────────────────────
-    // Credit receiver, debit sender directly in DB
+    // ── Internal transfer ─────────────────────────────────────────────────────
     if (recipientUser?.id) {
       await db.$transaction([
         db.payment.update({
@@ -249,7 +251,6 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
         }),
       ]);
 
-      // Notifications
       await db.notification.createMany({
         data: [
           {
@@ -326,7 +327,7 @@ router.post('/send', sendLimiter, async (req: Request, res: Response, next: Next
       }
     }
 
-    // ── Fallback: no wallet ───────────────────────────────────────────────────
+    // ── Fallback ──────────────────────────────────────────────────────────────
     await db.$transaction([
       db.payment.update({ where: { id: payment.id }, data: { status: 'COMPLETED', completedAt: new Date() } }),
       db.user.update({ where: { id: userId }, data: { balanceCents: { decrement: debitCents } } }),

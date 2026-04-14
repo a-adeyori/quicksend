@@ -1,21 +1,32 @@
 async function main() {
-  // Register User 1
+  const ts = Date.now();
+
   const reg1 = await fetch('https://quicksend-production.up.railway.app/api/v1/auth/register', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ email: `sender${Date.now()}@test.com`, password: 'testpassword123', firstName: 'Sender', lastName: 'User' })
+    body: JSON.stringify({
+      email: `s${ts}@test.com`,
+      username: `s${ts}`,
+      password: 'testpassword123',
+      firstName: 'Sender',
+      lastName: 'User'
+    })
   }).then(r => r.json());
-  console.log('Sender wallet:', reg1.user.walletAddress);
+  console.log('Sender:', reg1.user?.username);
 
-  // Register User 2
   const reg2 = await fetch('https://quicksend-production.up.railway.app/api/v1/auth/register', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ email: `receiver${Date.now()}@test.com`, password: 'testpassword123', firstName: 'Receiver', lastName: 'User' })
+    body: JSON.stringify({
+      email: `r${ts}@test.com`,
+      username: `r${ts}`,
+      password: 'testpassword123',
+      firstName: 'Receiver',
+      lastName: 'User'
+    })
   }).then(r => r.json());
-  console.log('Receiver wallet:', reg2.user.walletAddress);
+  console.log('Receiver:', reg2.user?.username);
 
-  // Deposit funds to sender
   const deposit = await fetch('https://quicksend-production.up.railway.app/api/v1/wallet/deposit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${reg1.accessToken}` },
@@ -23,16 +34,24 @@ async function main() {
   }).then(r => r.json());
   console.log('Deposit:', deposit);
 
-  // Send payment — use recipientEmail to look up internal user
-  const payment = await fetch('https://quicksend-production.up.railway.app/api/v1/payments/send', {
+  // Search for receiver before sending
+  const searchRes = await fetch(
+    `https://quicksend-production.up.railway.app/api/v1/users/search?q=${reg2.user?.username}`,
+    { headers: { 'Authorization': `Bearer ${reg1.accessToken}` } }
+  ).then(r => r.json());
+  console.log('Search for receiver:', JSON.stringify(searchRes, null, 2));
+
+  const payRes = await fetch('https://quicksend-production.up.railway.app/api/v1/payments/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${reg1.accessToken}` },
     body: JSON.stringify({
-      recipientEmail: reg2.user.email,
+      recipientUsername: reg2.user?.username,
       amountDollars: 10,
       note: 'Test payment'
     })
-  }).then(r => r.json());
+  });
+  console.log('Payment status:', payRes.status);
+  const payment = await payRes.json();
   console.log('Payment:', JSON.stringify(payment, null, 2));
 }
 
