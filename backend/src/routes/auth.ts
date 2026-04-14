@@ -16,8 +16,12 @@ const router = Router();
 const registerSchema = z.object({
   firstName: z.string().min(1).max(50),
   lastName: z.string().min(1).max(50),
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(30, 'Username must be at most 30 characters')
+    .regex(/^[a-z0-9_]+$/, 'Username may only contain lowercase letters, numbers, and underscores'),
   email: z.string().email(),
-  // Empty string from clients must become undefined (optional() alone does not allow '')
   phone: z.preprocess(
     (v) => (v === '' || v === undefined || v === null ? undefined : String(v).trim()),
     z.string().regex(/^\+?[\d\s\-()]{7,20}$/).optional()
@@ -26,9 +30,12 @@ const registerSchema = z.object({
   createWalletAddress: z.boolean().optional().default(true),
 });
 
+// Login accepts username OR email
 const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1), // email or username
   password: z.string(),
+  // legacy: some clients may send `email` directly
+  email: z.string().optional(),
 });
 
 const refreshSchema = z.object({
@@ -68,8 +75,12 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
     const body = registerSchema.parse(req.body);
 
     // Check email uniqueness
-    const existing = await db.user.findUnique({ where: { email: body.email } });
-    if (existing) throw AppError.conflict('An account with this email already exists');
+    const existingEmail = await db.user.findUnique({ where: { email: body.email } });
+    if (existingEmail) throw AppError.conflict('An account with this email already exists');
+
+    // Check username uniqueness
+    const existingUsername = await db.user.findUnique({ where: { username: body.username } });
+    if (existingUsername) throw AppError.conflict('That username is already taken');
 
     const passwordHash = await bcrypt.hash(body.password, config.bcryptRounds);
 
@@ -77,6 +88,7 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
       data: {
         firstName: body.firstName,
         lastName: body.lastName,
+        username: body.username,
         email: body.email,
         phone: body.phone,
         passwordHash,
@@ -85,11 +97,10 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
         assetCode: 'USD',
         assetScale: 2,
       },
-      select: { id: true, email: true, firstName: true, lastName: true, role: true },
+      select: { id: true, email: true, username: true, firstName: true, lastName: true, role: true },
     });
 
-    // Optional: auto-create a Rafiki wallet address for this user.
-    // If admin API is not configured, registration still succeeds.
+    // Auto-create Rafiki wallet address using username
     let walletAddress: string | null = null;
     if (body.createWalletAddress) {
       try {
@@ -97,7 +108,7 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
           const created = await rafikiAdminService.createWalletAddress({
             publicName: `${user.firstName} ${user.lastName}`.trim(),
             assetId: config.rafikiWalletAssetId,
-            username: body.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, ''),
+            username: body.username,
           });
           walletAddress = created.url;
           await db.user.update({
@@ -118,7 +129,6 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
       }
     }
 
-    // Tokens
     const accessToken = generateAccessToken(user.id, user.email, user.role);
     const refreshToken = generateRefreshToken(user.id);
 
@@ -136,12 +146,13 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
       data: { userId: user.id, action: 'REGISTER', resource: 'user', ipAddress: req.ip },
     });
 
-    logger.info('User registered', { userId: user.id, email: user.email });
+    logger.info('User registered', { userId: user.id, email: user.email, username: user.username });
 
     res.status(201).json({
       user: {
         id: user.id,
         email: user.email,
+        username: user.username,
         firstName: user.firstName,
         lastName: user.lastName,
         walletAddress,
@@ -158,17 +169,27 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
 
 router.post('/login', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { email, password } = loginSchema.parse(req.body);
+    const raw = loginSchema.parse(req.body);
+    // Support both `identifier` (username or email) and legacy `email` field
+    const identifier = (raw.identifier || raw.email || '').trim().toLowerCase();
+    const { password } = raw;
 
-    const user = await db.user.findUnique({
-      where: { email },
-      select: { id: true, email: true, firstName: true, lastName: true, role: true, passwordHash: true, isActive: true },
-    });
+    // Look up by email OR username
+    const isEmail = identifier.includes('@');
+    const user = await (isEmail
+      ? db.user.findUnique({
+          where: { email: identifier },
+          select: { id: true, email: true, username: true, firstName: true, lastName: true, role: true, passwordHash: true, isActive: true },
+        })
+      : db.user.findUnique({
+          where: { username: identifier },
+          select: { id: true, email: true, username: true, firstName: true, lastName: true, role: true, passwordHash: true, isActive: true },
+        }));
 
-    if (!user || !user.isActive) throw AppError.unauthorized('Invalid credentials');
+    if (!user || !user.isActive) throw AppError.unauthorized('Invalid username/email or password');
 
     const passwordMatch = await bcrypt.compare(password, user.passwordHash);
-    if (!passwordMatch) throw AppError.unauthorized('Invalid credentials');
+    if (!passwordMatch) throw AppError.unauthorized('Invalid username/email or password');
 
     const accessToken = generateAccessToken(user.id, user.email, user.role);
     const refreshToken = generateRefreshToken(user.id);
@@ -187,10 +208,16 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
       data: { userId: user.id, action: 'LOGIN', resource: 'user', ipAddress: req.ip },
     });
 
-    logger.info('User logged in', { userId: user.id });
+    logger.info('User logged in', { userId: user.id, username: user.username });
 
     res.json({
-      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName },
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
       accessToken,
       refreshToken,
     });
@@ -223,7 +250,6 @@ router.post('/refresh', async (req: Request, res: Response, next: NextFunction) 
 
     if (!stored.user.isActive) throw AppError.unauthorized('Account deactivated');
 
-    // Rotate: revoke old, issue new
     const newRefreshToken = generateRefreshToken(stored.user.id);
     await db.$transaction([
       db.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } }),
@@ -239,7 +265,6 @@ router.post('/refresh', async (req: Request, res: Response, next: NextFunction) 
     ]);
 
     const accessToken = generateAccessToken(stored.user.id, stored.user.email, stored.user.role);
-
     res.json({ accessToken, refreshToken: newRefreshToken });
   } catch (err) {
     next(err);
@@ -270,14 +295,17 @@ router.get('/me', authenticate, async (req: Request, res: Response, next: NextFu
     const user = await db.user.findUnique({
       where: { id: (req as AuthRequest).user.id },
       select: {
-        id: true, email: true, firstName: true, lastName: true,
+        id: true, email: true, username: true, firstName: true, lastName: true,
         phone: true, role: true, kycStatus: true, walletAddress: true,
         balanceCents: true, assetCode: true, assetScale: true,
         isVerified: true, createdAt: true,
       },
     });
     if (!user) throw AppError.notFound('User');
-    res.json(user);
+    res.json({
+      ...user,
+      balanceCents: user.balanceCents.toString(),
+    });
   } catch (err) {
     next(err);
   }

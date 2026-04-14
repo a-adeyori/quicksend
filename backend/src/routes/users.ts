@@ -1,12 +1,8 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// users.ts
-// ─────────────────────────────────────────────────────────────────────────────
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { db } from '../config/database';
 import { AppError } from '../middleware/errorHandler';
 import { authenticate, AuthRequest } from '../middleware/auth';
-import { rafikiService } from '../services/rafikiService';
 import { formatCurrency } from '../services/rafikiService';
 import { requireRouteParam } from '../utils/routeParams';
 
@@ -19,14 +15,12 @@ const updateProfileSchema = z.object({
   phone: z.string().optional(),
 });
 
-const searchSchema = z.object({
-  query: z.string().min(2).max(120),
-});
-
-// GET /users/profile
-usersRouter.get('/search', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+// ─── GET /users/search?q=yori ─────────────────────────────────────────────────
+// Search by username (primary), name, or email.
+// Returns only enough info for the send money UI.
+usersRouter.get('/search', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const q = (req.query.q as string ?? '').trim();
+    const q = (req.query.q as string ?? '').trim().toLowerCase();
     if (q.length < 2) {
       res.json({ users: [] });
       return;
@@ -37,33 +31,38 @@ usersRouter.get('/search', authenticate, async (req: Request, res: Response, nex
     const users = await db.user.findMany({
       where: {
         AND: [
-          { id: { not: userId } }, // exclude self
+          { id: { not: userId } },
+          { isActive: true },
           {
             OR: [
+              { username: { contains: q, mode: 'insensitive' } },
               { firstName: { contains: q, mode: 'insensitive' } },
               { lastName: { contains: q, mode: 'insensitive' } },
-              { email: { contains: q, mode: 'insensitive' } },
             ],
           },
-          { isActive: true },
         ],
       },
       select: {
         id: true,
+        username: true,
         firstName: true,
         lastName: true,
-        email: true,
         walletAddress: true,
+        assetCode: true,
+        assetScale: true,
       },
       take: 10,
+      orderBy: { username: 'asc' },
     });
 
     res.json({
       users: users.map(u => ({
         id: u.id,
+        username: u.username,
         name: `${u.firstName} ${u.lastName}`.trim(),
-        email: u.email,
         walletAddress: u.walletAddress,
+        assetCode: u.assetCode,
+        assetScale: u.assetScale,
         initials: `${u.firstName[0]}${u.lastName[0]}`.toUpperCase(),
       })),
     });
@@ -72,65 +71,20 @@ usersRouter.get('/search', authenticate, async (req: Request, res: Response, nex
   }
 });
 
-// PATCH /users/profile
+// ─── PATCH /users/profile ─────────────────────────────────────────────────────
 usersRouter.patch('/profile', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const updates = updateProfileSchema.parse(req.body);
     const user = await db.user.update({
       where: { id: (req as AuthRequest).user.id },
       data: updates,
-      select: { id: true, email: true, firstName: true, lastName: true, phone: true },
+      select: { id: true, email: true, username: true, firstName: true, lastName: true, phone: true },
     });
     res.json(user);
   } catch (err) { next(err); }
 });
 
-// GET /users/search?query=...
-// Search app users by name/email for in-app transfers.
-usersRouter.get('/search', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const authUserId = (req as AuthRequest).user.id;
-    const { query } = searchSchema.parse({ query: String(req.query.query ?? '') });
-
-    const rows = await db.user.findMany({
-      where: {
-        id: { not: authUserId },
-        OR: [
-          { email: { contains: query, mode: 'insensitive' } },
-          { firstName: { contains: query, mode: 'insensitive' } },
-          { lastName: { contains: query, mode: 'insensitive' } },
-        ],
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        walletAddress: true,
-        assetCode: true,
-        assetScale: true,
-      },
-      take: 20,
-      orderBy: { createdAt: 'desc' },
-    });
-
-    res.json({
-      users: rows.map((u) => ({
-        id: u.id,
-        email: u.email,
-        firstName: u.firstName,
-        lastName: u.lastName,
-        walletAddress: u.walletAddress,
-        assetCode: u.assetCode,
-        assetScale: u.assetScale,
-      })),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /users/balance
+// ─── GET /users/balance ───────────────────────────────────────────────────────
 usersRouter.get('/balance', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = await db.user.findUnique({
@@ -148,7 +102,7 @@ usersRouter.get('/balance', async (req: Request, res: Response, next: NextFuncti
   } catch (err) { next(err); }
 });
 
-// GET /users/notifications
+// ─── GET /users/notifications ─────────────────────────────────────────────────
 usersRouter.get('/notifications', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const notifications = await db.notification.findMany({
@@ -160,7 +114,7 @@ usersRouter.get('/notifications', async (req: Request, res: Response, next: Next
   } catch (err) { next(err); }
 });
 
-// POST /users/notifications/:id/read
+// ─── POST /users/notifications/:id/read ──────────────────────────────────────
 usersRouter.post('/notifications/:id/read', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const notifId = requireRouteParam(req.params.id);
