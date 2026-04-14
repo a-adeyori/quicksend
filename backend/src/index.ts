@@ -34,6 +34,7 @@ import adminRoutes from './routes/admin';
 console.log('>> index.ts loaded, building express app...');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ─── Security middleware ───────────────────────────────────────────────────────
 app.use(helmet());
