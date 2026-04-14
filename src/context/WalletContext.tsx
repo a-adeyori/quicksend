@@ -60,37 +60,20 @@ function buildDemoTransactions(senderId: string): Payment[] {
   const now = new Date().toISOString();
   return [
     {
-      id: 'demo-tx-1',
-      type: 'outgoing',
-      senderId,
+      id: 'demo-tx-1', type: 'outgoing', senderId,
       recipientName: 'Sarah (Daughter)',
       recipientWalletAddress: 'https://ilp.interledger-test.dev/sarah',
-      debitAmountCents: 5000,
-      receiveAmountCents: 5000,
-      feeAmountCents: 25,
-      assetCode: 'USD',
-      assetScale: 2,
-      status: 'COMPLETED',
-      note: 'Lunch',
-      amountFormatted: '$50.00',
-      initiatedAt: now,
-      completedAt: now,
+      debitAmountCents: 5000, receiveAmountCents: 5000, feeAmountCents: 25,
+      assetCode: 'USD', assetScale: 2, status: 'COMPLETED', note: 'Lunch',
+      amountFormatted: '$50.00', initiatedAt: now, completedAt: now,
     },
     {
-      id: 'demo-tx-2',
-      type: 'incoming',
-      senderId,
+      id: 'demo-tx-2', type: 'incoming', senderId,
       recipientName: 'Mike (Son)',
       recipientWalletAddress: 'https://ilp.interledger-test.dev/mike',
-      debitAmountCents: 0,
-      receiveAmountCents: 12000,
-      feeAmountCents: 0,
-      assetCode: 'USD',
-      assetScale: 2,
-      status: 'COMPLETED',
-      amountFormatted: '$120.00',
-      initiatedAt: now,
-      completedAt: now,
+      debitAmountCents: 0, receiveAmountCents: 12000, feeAmountCents: 0,
+      assetCode: 'USD', assetScale: 2, status: 'COMPLETED',
+      amountFormatted: '$120.00', initiatedAt: now, completedAt: now,
     },
   ];
 }
@@ -105,31 +88,17 @@ function makeDemoPayment(params: {
 }): { payment: Payment; newBalanceCents: number; error?: string } {
   const debitCents = Math.round(params.amountDollars * 100);
   if (debitCents > params.balanceCentsBefore) {
-    return {
-      payment: {} as Payment,
-      newBalanceCents: params.balanceCentsBefore,
-      error: 'Insufficient balance (simulation)',
-    };
+    return { payment: {} as Payment, newBalanceCents: params.balanceCentsBefore, error: 'Insufficient balance (simulation)' };
   }
   const feeCents = Math.max(2, Math.round(debitCents * 0.001));
   const total = debitCents + feeCents;
   const now = new Date().toISOString();
   const payment: Payment = {
-    id: `demo-${Date.now()}`,
-    type: 'outgoing',
-    senderId: params.senderId,
-    recipientName: params.recipientName,
-    recipientWalletAddress: params.recipientWalletAddress,
-    debitAmountCents: total,
-    receiveAmountCents: debitCents,
-    feeAmountCents: feeCents,
-    assetCode: 'USD',
-    assetScale: 2,
-    status: 'COMPLETED',
-    note: params.note,
-    amountFormatted: `$${params.amountDollars.toFixed(2)}`,
-    initiatedAt: now,
-    completedAt: now,
+    id: `demo-${Date.now()}`, type: 'outgoing', senderId: params.senderId,
+    recipientName: params.recipientName, recipientWalletAddress: params.recipientWalletAddress,
+    debitAmountCents: total, receiveAmountCents: debitCents, feeAmountCents: feeCents,
+    assetCode: 'USD', assetScale: 2, status: 'COMPLETED', note: params.note,
+    amountFormatted: `$${params.amountDollars.toFixed(2)}`, initiatedAt: now, completedAt: now,
   };
   return { payment, newBalanceCents: params.balanceCentsBefore - total };
 }
@@ -140,9 +109,7 @@ function parseStoredDemo(): Partial<WalletState> | null {
   try {
     const p = JSON.parse(raw) as Partial<WalletState>;
     if (p.balance && Array.isArray(p.transactions)) return p;
-  } catch {
-    /* ignore */
-  }
+  } catch { /* ignore */ }
   return null;
 }
 
@@ -150,21 +117,10 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated, user } = useAuth();
   const senderId = user?.id ?? DEMO_USER.id;
   const [state, setState] = useState<WalletState>({
-    isConnected: false,
-    walletAddress: DEMO_PLATFORM_WALLET,
-    balance: {
-      value: '854732',
-      assetCode: 'USD',
-      assetScale: 2,
-      formatted: '$8,547.32',
-    },
-    transactions: buildDemoTransactions(DEMO_USER.id),
-    contacts: buildDemoContacts(),
-    isLoading: false,
-    error: null,
-    hasMoreTransactions: false,
-    nextCursor: null,
-    ilpAccessToken: null,
+    isConnected: false, walletAddress: DEMO_PLATFORM_WALLET,
+    balance: { value: '854732', assetCode: 'USD', assetScale: 2, formatted: '$8,547.32' },
+    transactions: buildDemoTransactions(DEMO_USER.id), contacts: buildDemoContacts(),
+    isLoading: false, error: null, hasMoreTransactions: false, nextCursor: null, ilpAccessToken: null,
   });
 
   const stateRef = useRef(state);
@@ -180,38 +136,26 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isAuthenticated) {
       setState({
-        isConnected: false,
-        walletAddress: DEMO_PLATFORM_WALLET,
+        isConnected: false, walletAddress: DEMO_PLATFORM_WALLET,
         balance: { value: '854732', assetCode: 'USD', assetScale: 2, formatted: '$8,547.32' },
-        transactions: buildDemoTransactions(DEMO_USER.id),
-        contacts: buildDemoContacts(),
-        isLoading: false,
-        error: null,
-        hasMoreTransactions: false,
-        nextCursor: null,
-        ilpAccessToken: null,
+        transactions: buildDemoTransactions(DEMO_USER.id), contacts: buildDemoContacts(),
+        isLoading: false, error: null, hasMoreTransactions: false, nextCursor: null, ilpAccessToken: null,
       });
       return;
     }
     const stored = parseStoredDemo();
     if (stored?.balance && stored.transactions) {
       setState((s) => ({
-        ...s,
-        balance: stored.balance!,
-        transactions: stored.transactions!,
+        ...s, balance: stored.balance!, transactions: stored.transactions!,
         contacts: stored.contacts ?? buildDemoContacts(),
         isConnected: stored.isConnected ?? false,
         walletAddress: stored.walletAddress ?? DEMO_PLATFORM_WALLET,
-        isLoading: false,
-        error: null,
+        isLoading: false, error: null,
       }));
     } else {
       setState((s) => ({
-        ...s,
-        transactions: buildDemoTransactions(user?.id ?? DEMO_USER.id),
-        isLoading: false,
-        error: null,
-        isConnected: false,
+        ...s, transactions: buildDemoTransactions(user?.id ?? DEMO_USER.id),
+        isLoading: false, error: null, isConnected: false,
       }));
     }
   }, [isAuthenticated, user?.id]);
@@ -220,11 +164,8 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
     if (!isAuthenticated) return;
     const id = setTimeout(() => {
       saveDemoWalletJson(JSON.stringify({
-        balance: state.balance,
-        transactions: state.transactions,
-        contacts: state.contacts,
-        isConnected: state.isConnected,
-        walletAddress: state.walletAddress,
+        balance: state.balance, transactions: state.transactions, contacts: state.contacts,
+        isConnected: state.isConnected, walletAddress: state.walletAddress,
       }));
     }, 450);
     return () => clearTimeout(id);
@@ -250,14 +191,10 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
   const loadMoreTransactions = useCallback(async () => {}, []);
   const refreshContacts = useCallback(async () => {}, []);
 
-  const getQuote = useCallback(async (
-    _recipientWalletAddress: string,
-    amountDollars: number
-  ): Promise<QuoteResult | null> => {
+  const getQuote = useCallback(async (_: string, amountDollars: number): Promise<QuoteResult | null> => {
     const fee = Math.max(0.02, amountDollars * 0.001);
     return {
-      mode: 'estimated',
-      amountDollars,
+      mode: 'estimated', amountDollars,
       estimatedFee: `$${fee.toFixed(2)}`,
       totalDebit: `$${(amountDollars + fee).toFixed(2)}`,
       expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
@@ -288,27 +225,21 @@ function DemoWalletProvider({ children }: { children: ReactNode }) {
       return { success: false, error };
     }
     setState(prev => ({
-      ...prev,
-      isLoading: false,
-      error: null,
+      ...prev, isLoading: false, error: null,
       transactions: [payment, ...prev.transactions],
-      balance: prev.balance
-        ? {
-            ...prev.balance,
-            value: newBalanceCents.toString(),
-            formatted: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(newBalanceCents / 100),
-          }
-        : null,
+      balance: prev.balance ? {
+        ...prev.balance,
+        value: newBalanceCents.toString(),
+        formatted: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(newBalanceCents / 100),
+      } : null,
     }));
     return { success: true, paymentId: payment.id };
   }, [senderId]);
 
   return (
     <WalletContext.Provider value={{
-      ...state,
-      connectWallet, disconnectWallet, setAccessToken,
-      refreshBalance, refreshTransactions, loadMoreTransactions,
-      refreshContacts, getQuote, sendMoney,
+      ...state, connectWallet, disconnectWallet, setAccessToken,
+      refreshBalance, refreshTransactions, loadMoreTransactions, refreshContacts, getQuote, sendMoney,
     }}>
       {children}
     </WalletContext.Provider>
@@ -319,16 +250,9 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
 
   const [state, setState] = useState<WalletState>({
-    isConnected: false,
-    walletAddress: '',
-    balance: null,
-    transactions: [],
-    contacts: [],
-    isLoading: false,
-    error: null,
-    hasMoreTransactions: false,
-    nextCursor: null,
-    ilpAccessToken: null,
+    isConnected: false, walletAddress: '', balance: null, transactions: [],
+    contacts: [], isLoading: false, error: null, hasMoreTransactions: false,
+    nextCursor: null, ilpAccessToken: null,
   });
 
   const setAccessToken = useCallback(async (token: string) => {
@@ -355,10 +279,7 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
           transactions: txPage.data,
           hasMoreTransactions: txPage.pagination.hasNextPage,
           nextCursor: txPage.pagination.nextCursor,
-          contacts,
-          ilpAccessToken: ilpTok,
-          isLoading: false,
-          error: null,
+          contacts, ilpAccessToken: ilpTok, isLoading: false, error: null,
         }));
       } catch {
         setState(s => ({ ...s, isLoading: false, error: 'Could not load wallet data.' }));
@@ -373,8 +294,7 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
       const info = await walletService.getInfo();
       setState(s => ({ ...s, isConnected: true, walletAddress: url, balance: info.balance, isLoading: false }));
     } catch (err: unknown) {
-      const message = err && typeof err === 'object' && 'message' in err
-        ? String((err as { message: string }).message) : 'Failed to connect wallet.';
+      const message = err && typeof err === 'object' && 'message' in err ? String((err as { message: string }).message) : 'Failed to connect wallet.';
       setState(s => ({ ...s, isLoading: false, error: message }));
     }
   }, []);
@@ -395,8 +315,7 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
     try {
       const page = await paymentsService.list({ limit: 20 });
       setState(s => ({
-        ...s,
-        transactions: page.data,
+        ...s, transactions: page.data,
         hasMoreTransactions: page.pagination.hasNextPage,
         nextCursor: page.pagination.nextCursor,
       }));
@@ -408,8 +327,7 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
     try {
       const page = await paymentsService.list({ limit: 20, cursor: state.nextCursor });
       setState(s => ({
-        ...s,
-        transactions: [...s.transactions, ...page.data],
+        ...s, transactions: [...s.transactions, ...page.data],
         hasMoreTransactions: page.pagination.hasNextPage,
         nextCursor: page.pagination.nextCursor,
       }));
@@ -423,17 +341,13 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
     } catch { /* ignore */ }
   }, []);
 
-  const getQuote = useCallback(async (
-    recipientWalletAddress: string,
-    amountDollars: number
-  ): Promise<QuoteResult | null> => {
+  const getQuote = useCallback(async (recipientWalletAddress: string, amountDollars: number): Promise<QuoteResult | null> => {
     try {
       return await paymentsService.getQuote(recipientWalletAddress, amountDollars);
     } catch {
       const fee = Math.max(0.02, amountDollars * 0.001);
       return {
-        mode: 'estimated',
-        amountDollars,
+        mode: 'estimated', amountDollars,
         estimatedFee: `$${fee.toFixed(2)}`,
         totalDebit: `$${(amountDollars + fee).toFixed(2)}`,
         expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
@@ -458,8 +372,7 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
         note: params.note,
       });
       setState(s => ({
-        ...s,
-        isLoading: false,
+        ...s, isLoading: false,
         transactions: [result.payment, ...s.transactions],
         balance: s.balance ? {
           ...s.balance,
@@ -481,10 +394,8 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
 
   return (
     <WalletContext.Provider value={{
-      ...state,
-      connectWallet, disconnectWallet, setAccessToken,
-      refreshBalance, refreshTransactions, loadMoreTransactions,
-      refreshContacts, getQuote, sendMoney,
+      ...state, connectWallet, disconnectWallet, setAccessToken,
+      refreshBalance, refreshTransactions, loadMoreTransactions, refreshContacts, getQuote, sendMoney,
     }}>
       {children}
     </WalletContext.Provider>
@@ -492,9 +403,7 @@ function LiveWalletProvider({ children }: { children: ReactNode }) {
 }
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  if (useDemoWallet) {
-    return <DemoWalletProvider>{children}</DemoWalletProvider>;
-  }
+  if (useDemoWallet) return <DemoWalletProvider>{children}</DemoWalletProvider>;
   return <LiveWalletProvider>{children}</LiveWalletProvider>;
 }
 
