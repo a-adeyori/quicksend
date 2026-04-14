@@ -26,6 +26,7 @@ export const rafikiAdminService = {
   async createWalletAddress(params: {
     publicName: string;
     assetId: string;
+    username: string;
   }): Promise<CreateWalletAddressResult> {
     if (!config.rafikiAdminApiUrl || !config.rafikiTenantId || !config.rafikiTenantApiSecret) {
       throw AppError.badRequest(
@@ -33,6 +34,8 @@ export const rafikiAdminService = {
         'RAFIKI_ADMIN_NOT_CONFIGURED'
       );
     }
+
+    const walletUrl = `${process.env.WALLET_ADDRESS_BASE_URL}/${params.username}`;
 
     const query = `
 mutation CreateWalletAddress($input: CreateWalletAddressInput!) {
@@ -53,6 +56,7 @@ mutation CreateWalletAddress($input: CreateWalletAddressInput!) {
       query,
       variables: {
         input: {
+          url: walletUrl,
           publicName: params.publicName,
           assetId: params.assetId,
         },
